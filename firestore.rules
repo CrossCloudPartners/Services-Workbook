@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: projects
+    // Document ID: {projectId}
+    // Fields:
+    //   - id: string (required) - Unique project ID
+    //   - ownerId: string (required) - UID of the project owner
+    //   - name: string (optional) - Project name
+    //   - data: map (required) - The full SPWData object
+    //   - updatedAt: string (required) - ISO 8601 timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.ownerId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          ((request.auth.token.email == "john.vu@crosscloudpartners.com" || request.auth.token.email == "support@crosscloudpartners.com") && request.auth.token.email_verified == true));
+    }
+
+    function isVerified() {
+      return isAuthenticated() && request.auth.token.email_verified == true;
+    }
+
+    function hasReadPermission(projectId) {
+      return isVerified() && 'email' in request.auth.token && 
+             exists(/databases/$(database)/documents/projects/$(projectId)/shares/$(request.auth.token.email.lower()));
+    }
+
+    function hasEditPermission(projectId) {
+      return isVerified() && 'email' in request.auth.token &&
+             exists(/databases/$(database)/documents/projects/$(projectId)/shares/$(request.auth.token.email.lower())) &&
+             get(/databases/$(database)/documents/projects/$(projectId)/shares/$(request.auth.token.email.lower())).data.permission == "edit";
+    }
+
+    function isValidProject(data) {
+      // Allow the new structure: { id, ownerId, projects, activeProjectId, updatedAt }
+      // Or the old structure if needed, but let's enforce the new one for now.
+      return data.keys().hasAll(['id', 'ownerId', 'projects', 'activeProjectId', 'updatedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.ownerId == request.auth.uid &&
+             data.projects is map &&
+             data.activeProjectId is string &&
+             data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'firstName', 'lastName', 'email', 'companyName', 'createdAt']) &&
+             data.uid is string && (data.uid == request.auth.uid || isAdmin()) &&
+             data.firstName is string && data.firstName.size() <= 100 &&
+             data.lastName is string && data.lastName.size() <= 100 &&
+             data.email is string && data.email.size() <= 150 &&
+             data.companyName is string && data.companyName.size() <= 200 &&
+             data.createdAt is string && data.createdAt.size() <= 64 &&
+             (!('role' in data) || data.role in ['admin', 'user']) &&
+             (!('lastLogin' in data) || data.lastLogin is string);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) &&
+                    (isAdmin() || request.resource.data.email == resource.data.email) && // email is immutable for non-admins
+                    (isAdmin() || !('role' in request.resource.data) || request.resource.data.role == resource.data.role); // role is immutable for non-admins
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isAdmin() || hasReadPermission(projectId));
+      allow create: if isAuthenticated() && isValidProject(request.resource.data) && request.auth.uid == request.resource.data.ownerId;
+      allow update: if (resource.data.ownerId == request.auth.uid || isAdmin() || hasEditPermission(projectId)) && isValidProject(request.resource.data) && 
+                    (isAdmin() || request.resource.data.ownerId == resource.data.ownerId);
+      allow delete: if resource.data.ownerId == request.auth.uid || isAdmin();
+    }
+
+    // Collection Group rules for 'shares'
+    match /{path=**}/shares/{email} {
+      allow read: if isAuthenticated() && (
+        (isVerified() && 'email' in request.auth.token && (request.auth.token.email.lower() == email.lower() || request.auth.token.email.lower() == resource.data.email)) || 
+        isAdmin() ||
+        (path.size() >= 2 && path[path.size() - 2] == 'projects' && get(/databases/$(database)/documents/projects/$(path[path.size() - 1])).data.ownerId == request.auth.uid)
+      );
+      allow write: if isAuthenticated() && (
+        isAdmin() ||
+        (path.size() >= 2 && path[path.size() - 2] == 'projects' && get(/databases/$(database)/documents/projects/$(path[path.size() - 1])).data.ownerId == request.auth.uid)
+      );
+    }
+
+    match /activity_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    match /presence/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
