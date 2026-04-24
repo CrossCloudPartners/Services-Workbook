@@ -56,6 +56,7 @@ export default function ShareModal({ isOpen, onClose, projectId, projectName, ow
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<'read' | 'edit'>('read');
   const [shares, setShares] = useState<Record<string, 'read' | 'edit'>>({});
+  const [usersInfo, setUsersInfo] = useState<Record<string, { photoURL?: string }>>({});
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -71,7 +72,24 @@ export default function ShareModal({ isOpen, onClose, projectId, projectName, ow
       setShares(newShares);
     });
 
-    return () => unsubscribe();
+    const usersRef = collection(db, 'public_profiles');
+    const unsubscribeUsers = onSnapshot(usersRef, (snapshot) => {
+      const usersMap: Record<string, { photoURL?: string }> = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (doc.id) {
+          usersMap[doc.id.toLowerCase()] = { photoURL: data.photoURL };
+        }
+      });
+      setUsersInfo(usersMap);
+    }, (error) => {
+      console.error("Error fetching public profiles:", error);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeUsers();
+    };
   }, [projectId]);
 
   const handleInvite = async () => {
@@ -103,6 +121,16 @@ export default function ShareModal({ isOpen, onClose, projectId, projectName, ow
       await deleteDoc(doc(db, 'projects', projectId, 'shares', inviteeEmail));
     } catch (err) {
       console.error('Error removing share:', err);
+    }
+  };
+
+  const handleUpdateShare = async (inviteeEmail: string, newPermission: 'read' | 'edit') => {
+    try {
+      await setDoc(doc(db, 'projects', projectId, 'shares', inviteeEmail), {
+        permission: newPermission
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error updating share permission:', err);
     }
   };
 
@@ -163,9 +191,18 @@ export default function ShareModal({ isOpen, onClose, projectId, projectName, ow
             <div className="space-y-3 max-h-[240px] overflow-y-auto pr-2 scrollbar-hide">
               <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                    {ownerEmail.charAt(0).toUpperCase()}
-                  </div>
+                  {usersInfo[ownerEmail.toLowerCase()]?.photoURL ? (
+                    <img 
+                      src={usersInfo[ownerEmail.toLowerCase()].photoURL} 
+                      alt={ownerEmail} 
+                      referrerPolicy="no-referrer"
+                      className="w-8 h-8 rounded-full object-cover" 
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                      {ownerEmail.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{ownerEmail}</p>
                     <p className="text-[10px] text-gray-500">Owner</p>
@@ -177,21 +214,39 @@ export default function ShareModal({ isOpen, onClose, projectId, projectName, ow
               {Object.entries(shares).map(([inviteeEmail, perm]) => (
                 <div key={inviteeEmail} className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-bold">
-                      {inviteeEmail.charAt(0).toUpperCase()}
-                    </div>
+                    {usersInfo[inviteeEmail.toLowerCase()]?.photoURL ? (
+                      <img 
+                        src={usersInfo[inviteeEmail.toLowerCase()].photoURL} 
+                        alt={inviteeEmail} 
+                        referrerPolicy="no-referrer"
+                        className="w-8 h-8 rounded-full object-cover" 
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-bold">
+                        {inviteeEmail.charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-medium text-gray-900">{inviteeEmail}</p>
                       <p className="text-[10px] text-gray-500 capitalize">{perm}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className={cn(
-                      "font-medium",
-                      perm === 'edit' ? "bg-amber-50 text-amber-700 border-amber-100" : "bg-blue-50 text-blue-700 border-blue-100"
-                    )}>
-                      {perm === 'edit' ? 'Editor' : 'Viewer'}
-                    </Badge>
+                    <Select 
+                      value={perm} 
+                      onValueChange={(newPerm: 'read' | 'edit') => handleUpdateShare(inviteeEmail, newPerm)}
+                    >
+                      <SelectTrigger className={cn(
+                        "h-8 w-[100px] border-none font-medium focus:ring-0 rounded-lg",
+                        perm === 'edit' ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"
+                      )}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="read" className="text-blue-700 font-medium cursor-pointer focus:bg-blue-50 focus:text-blue-700">Viewer</SelectItem>
+                        <SelectItem value="edit" className="text-amber-700 font-medium cursor-pointer focus:bg-amber-50 focus:text-amber-700">Editor</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Button
                       variant="ghost"
                       size="icon"

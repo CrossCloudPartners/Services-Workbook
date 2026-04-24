@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo, useEffect, ReactNode, MouseEvent } from 'react';
+import { useState, useMemo, useEffect, ReactNode, MouseEvent, useCallback, useRef } from 'react';
 import { recalculateEntry } from './lib/calculations';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -46,7 +46,8 @@ import {
   BarChart3,
   LayoutTemplate,
   Share2,
-  UserPlus
+  UserPlus,
+  Bot
 } from 'lucide-react';
 import { SPWData, GlobalSettings, ProjectShare, ProjectPresence } from './types';
 import { logActivity } from './lib/activity';
@@ -57,6 +58,7 @@ import ChangeHistoryTab from './components/ChangeHistoryTab';
 import ProjectsAndPOsTab from './components/ProjectsAndPOsTab';
 import ProfileModal from './components/ProfileModal';
 import ShareModal from './components/ShareModal';
+import AIAgentSlideOut from './components/AIAgentSlideOut';
 
 import ResourcePlanningTab from './components/ResourcePlanningTab';
 import RateCardTab from './components/RateCardTab';
@@ -65,7 +67,7 @@ import AdminTab from './components/AdminTab';
 
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, getDocFromServer, updateDoc, collection, query, where, deleteDoc, deleteField, collectionGroup } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, getDocFromServer, updateDoc, collection, query, where, deleteDoc, deleteField, collectionGroup, getDocs } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -76,6 +78,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 import SignIn from './components/Auth/SignIn';
 import Register from './components/Auth/Register';
+import LandingPage from './components/Auth/LandingPage';
 
 enum OperationType {
   CREATE = 'create',
@@ -106,8 +109,14 @@ interface FirestoreErrorInfo {
 }
 
 const INITIAL_GLOBAL_SETTINGS: GlobalSettings = {
-  rateCard: [],
-  countries: [],
+  rateCard: [
+    { id: '1', role: 'Developer', country: 'USA', currency: 'USD', costRate: 50, billRate: 100 },
+    { id: '2', role: 'Designer', country: 'USA', currency: 'USD', costRate: 40, billRate: 80 },
+  ],
+  countries: [
+    { id: '1', name: 'USA', currency: 'USD' },
+    { id: '2', name: 'UK', currency: 'GBP' },
+  ],
   phases: [
     { id: '1', name: 'Prepare', color: '#94A3B8' },
     { id: '2', name: 'Plan', color: '#3B82F6' },
@@ -181,10 +190,12 @@ export default function App() {
     'default': { name: 'New Project', data: INITIAL_DATA }
   });
   const [sharedProjects, setSharedProjects] = useState<Record<string, { name: string, data: SPWData, isShared?: boolean, permission?: string }>>({});
-  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>(INITIAL_GLOBAL_SETTINGS);
+  const sharedProjectUnsubscribes = useRef<Record<string, () => void>>({});
+  const [baseGlobalSettings, setBaseGlobalSettings] = useState<GlobalSettings>(INITIAL_GLOBAL_SETTINGS);
+  const [userGlobalSettings, setUserGlobalSettings] = useState<Partial<GlobalSettings>>({});
   const [userProfile, setUserProfile] = useState<any>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [authMode, setAuthMode] = useState<'signin' | 'register' | 'app'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'register' | 'app' | 'landing'>('landing');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,10 +208,32 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSubTab, setAdminSubTab] = useState('dashboard');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isAIAgentOpen, setIsAIAgentOpen] = useState(false);
   const [activePresences, setActivePresences] = useState<ProjectPresence[]>([]);
 
-  const activeProject = projects[activeProjectId] || sharedProjects[activeProjectId] || { name: 'New Project', data: INITIAL_DATA };
-  const data = activeProject.data;
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const lastSavedData = useRef<string | null>(null);
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const globalSettings = useMemo(() => {
+    return {
+      ...INITIAL_GLOBAL_SETTINGS,
+      ...baseGlobalSettings,
+      ...userGlobalSettings,
+      rateCard: userGlobalSettings.rateCard?.length ? userGlobalSettings.rateCard : (baseGlobalSettings.rateCard?.length ? baseGlobalSettings.rateCard : INITIAL_GLOBAL_SETTINGS.rateCard),
+      countries: userGlobalSettings.countries?.length ? userGlobalSettings.countries : (baseGlobalSettings.countries?.length ? baseGlobalSettings.countries : INITIAL_GLOBAL_SETTINGS.countries),
+      phases: userGlobalSettings.phases?.length ? userGlobalSettings.phases : (baseGlobalSettings.phases?.length ? baseGlobalSettings.phases : INITIAL_GLOBAL_SETTINGS.phases),
+      templates: userGlobalSettings.templates || baseGlobalSettings.templates || INITIAL_GLOBAL_SETTINGS.templates
+    };
+  }, [baseGlobalSettings, userGlobalSettings]);
+
+  const activeProject = (activeProjectId && (projects[activeProjectId] || sharedProjects[activeProjectId])) || { name: 'New Project', data: INITIAL_DATA };
+  const isShared = !!sharedProjects[activeProjectId];
+  const permission = isShared ? (sharedProjects[activeProjectId] as any).permission : 'edit';
+  console.log('activeProjectId:', activeProjectId);
+  console.log('activeProject:', activeProject);
+  const data = activeProject?.data || INITIAL_DATA;
+  console.log('data:', data);
 
   const setData = (newData: SPWData) => {
     const account = newData.projectSummary.account;
@@ -319,12 +352,9 @@ export default function App() {
       try {
         if (sharedProjects[projectToDelete]) {
           // If it's a shared project, just remove the share for this user
-          const emailKey = user.email?.toLowerCase().replace(/\./g, '_');
-          if (emailKey) {
-            const projectRef = doc(db, 'projects', projectToDelete);
-            await updateDoc(projectRef, {
-              [`sharedWith.${emailKey}`]: deleteField()
-            });
+          if (user.email) {
+            const shareRef = doc(db, 'projects', projectToDelete, 'shares', user.email.toLowerCase());
+            await deleteDoc(shareRef);
           }
         } else {
           // If owner, delete the whole project
@@ -351,14 +381,24 @@ export default function App() {
 
   const handleSwitchProject = (id: string) => {
     setActiveProjectId(id);
+    if (activeTab === 'admin') {
+      setActiveTab('summary');
+    }
   };
 
   // Derived admin state for robustness
   const isSystemAdmin = useMemo(() => {
     if (!user) return false;
-    const isAdminEmail = user.email === 'john.vu@crosscloudpartners.com' || user.email === 'support@crosscloudpartners.com';
-    return isAdminEmail || isAdmin || userProfile?.role === 'admin';
-  }, [user, isAdmin, userProfile]);
+    if (user.email === 'john.vu@crosscloudpartners.com') return false;
+    const isEmergencyAdmin = user.email === 'support@crosscloudpartners.com';
+    return isEmergencyAdmin || userProfile?.role === 'admin';
+  }, [user, userProfile]);
+
+  useEffect(() => {
+    if (!isSystemAdmin && activeTab === 'admin') {
+      setActiveTab('summary');
+    }
+  }, [isSystemAdmin, activeTab]);
 
   const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
     const errInfo: FirestoreErrorInfo = {
@@ -404,9 +444,8 @@ export default function App() {
         setError(null); // Clear any previous auth errors
         
         // Check if user is a system admin
-        const isAdminEmail = u.email === 'john.vu@crosscloudpartners.com' || u.email === 'support@crosscloudpartners.com';
-        if (isAdminEmail) {
-          setIsAdmin(true);
+        const isEmergencyAdmin = u.email === 'support@crosscloudpartners.com';
+        if (isEmergencyAdmin) {
           setActiveTab('admin');
           setAdminSubTab('dashboard');
         }
@@ -417,7 +456,7 @@ export default function App() {
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
             // If it's a Google user and profile doesn't exist, create a basic one
-            const isFirstAdmin = u.email === 'john.vu@crosscloudpartners.com' || u.email === 'support@crosscloudpartners.com';
+            const isFirstAdmin = u.email === 'support@crosscloudpartners.com';
             if (u.providerData.some(p => p.providerId === 'google.com')) {
               await setDoc(userRef, {
                 uid: u.uid,
@@ -427,22 +466,72 @@ export default function App() {
                 companyName: 'Individual',
                 createdAt: new Date().toISOString(),
                 role: isFirstAdmin ? 'admin' : 'user',
-                lastLogin: new Date().toISOString()
+                lastLogin: new Date().toISOString(),
+                photoURL: u.photoURL || null
               });
-              if (isFirstAdmin) setIsAdmin(true);
+              
+              if (u.email) {
+                try {
+                  await setDoc(doc(db, 'public_profiles', u.email.toLowerCase()), {
+                    uid: u.uid,
+                    firstName: u.displayName?.split(' ')[0] || 'User',
+                    lastName: u.displayName?.split(' ').slice(1).join(' ') || '',
+                    photoURL: u.photoURL || null,
+                  }, { merge: true });
+                } catch(e) {}
+              }
             }
           } else {
             const profile = userSnap.data();
-            if (profile.role === 'admin') setIsAdmin(true);
-            // Update last login
-            await updateDoc(userRef, { lastLogin: new Date().toISOString() });
+            
+            // Only update last login if it hasn't been updated in the last 24 hours
+            const lastLoginDate = profile.lastLogin ? new Date(profile.lastLogin) : new Date(0);
+            const now = new Date();
+            const hoursSinceLastLogin = (now.getTime() - lastLoginDate.getTime()) / (1000 * 60 * 60);
+
+            if (hoursSinceLastLogin > 24 || profile.photoURL !== (u.photoURL || profile.photoURL || null)) {
+              // Update last login and photoURL if needed
+              await updateDoc(userRef, { 
+                lastLogin: now.toISOString(), 
+                photoURL: u.photoURL || profile.photoURL || null 
+              });
+            }
+            
+            // Only sync public profile if data changed
+            if (u.email) {
+              const publicProfileRef = doc(db, 'public_profiles', u.email.toLowerCase());
+              const publicProfileSnap = await getDoc(publicProfileRef);
+              const publicProfileData = publicProfileSnap.exists() ? publicProfileSnap.data() : null;
+
+              const newFirstName = profile.firstName || u.displayName?.split(' ')[0] || '';
+              const newLastName = profile.lastName || u.displayName?.split(' ').slice(1).join(' ') || '';
+              const newPhotoURL = profile.photoURL || u.photoURL || null;
+
+              if (!publicProfileData || 
+                  publicProfileData.firstName !== newFirstName || 
+                  publicProfileData.lastName !== newLastName || 
+                  publicProfileData.photoURL !== newPhotoURL) {
+                try {
+                  await setDoc(publicProfileRef, {
+                    uid: u.uid,
+                    firstName: newFirstName,
+                    lastName: newLastName,
+                    photoURL: newPhotoURL,
+                  }, { merge: true });
+                } catch(e) {
+                  console.warn('Failed to sync public profile:', e);
+                }
+              }
+            }
+
+            // ONE-TIME BACKFILL SCRIPT
+            // Removed for performance.
           }
         } catch (err) {
           console.error('Error fetching/creating user profile:', err);
         }
       } else {
         setAuthMode(prev => prev === 'app' ? 'signin' : prev);
-        setIsAdmin(false);
       }
       setLoading(false);
     });
@@ -459,7 +548,8 @@ export default function App() {
     setProjects({});
     setSharedProjects({});
     setActiveProjectId('default');
-    setGlobalSettings(INITIAL_GLOBAL_SETTINGS);
+    setBaseGlobalSettings(INITIAL_GLOBAL_SETTINGS);
+    setUserGlobalSettings({});
     setUserProfile(null);
     setIsDataLoaded(false);
 
@@ -469,37 +559,55 @@ export default function App() {
         const profile = snapshot.data();
         setUserProfile(profile);
         
-        const isAdminEmail = user.email === 'john.vu@crosscloudpartners.com' || user.email === 'support@crosscloudpartners.com';
-        if (isAdminEmail && profile.role !== 'admin') {
+        const isEmergencyAdmin = user.email === 'support@crosscloudpartners.com';
+        if (isEmergencyAdmin && profile.role !== 'admin') {
           try {
             await updateDoc(userProfileRef, { role: 'admin' });
-            setIsAdmin(true);
           } catch (err) {
             console.error('Failed to proactively upgrade admin role:', err);
-            setIsAdmin(true);
           }
-        } else if (profile.role === 'admin') {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
+        } else if (user.email === 'john.vu@crosscloudpartners.com' && profile.role === 'admin') {
+          try {
+            await updateDoc(userProfileRef, { role: 'user' });
+          } catch (err) {
+            console.error('Failed to proactively downgrade user role:', err);
+          }
         }
       }
     }, (err) => {
-      console.error('Error fetching user profile:', err);
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
     });
 
     // Load user settings (activeProjectId, globalSettings)
     const settingsRef = doc(db, 'settings', user.uid);
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
+      console.log('User settings snapshot exists:', snapshot.exists());
       if (snapshot.exists()) {
         const settingsData = snapshot.data();
+        console.log('User settings data:', settingsData);
         if (settingsData.globalSettings) {
-          setGlobalSettings(settingsData.globalSettings);
+          setUserGlobalSettings(settingsData.globalSettings);
         }
         if (settingsData.activeProjectId) {
           setActiveProjectId(settingsData.activeProjectId);
         }
       }
+    }, (err) => {
+      console.error('Error loading user settings:', err);
+      handleFirestoreError(err, OperationType.GET, `settings/${user.uid}`);
+    });
+
+    // Load truly global settings
+    const globalSettingsRef = doc(db, 'settings', 'global');
+    const unsubscribeGlobalSettings = onSnapshot(globalSettingsRef, (snapshot) => {
+      console.log('Global settings snapshot exists:', snapshot.exists());
+      if (snapshot.exists()) {
+        const data = snapshot.data() as GlobalSettings;
+        console.log('Global settings data:', data);
+        setBaseGlobalSettings(data);
+      }
+    }, (err) => {
+      console.warn('Could not load global settings:', err);
     });
 
     // Load projects owned by user
@@ -515,6 +623,8 @@ export default function App() {
       });
       setProjects(newProjects);
       setIsDataLoaded(true);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'projects');
     });
 
     // Load projects shared with user
@@ -526,54 +636,84 @@ export default function App() {
       where('email', '==', userEmail)
     );
 
-    const unsubscribeShared = onSnapshot(sharedProjectsQuery, async (snapshot) => {
-      const newShared: Record<string, any> = {};
+    const unsubscribeShared = onSnapshot(sharedProjectsQuery, (snapshot) => {
+      const newProjectIds = new Set(snapshot.docs.map(doc => doc.data().projectId));
       
-      for (const shareDoc of snapshot.docs) {
-        const shareData = shareDoc.data();
-        try {
-          const projectRef = doc(db, 'projects', shareData.projectId);
-          const projectSnap = await getDoc(projectRef);
-          if (projectSnap.exists()) {
-            newShared[shareData.projectId] = {
-              ...projectSnap.data(),
-              isShared: true,
-              permission: shareData.permission
-            };
-          }
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, `projects/${shareData.projectId}`);
+      // Unsubscribe from removed projects
+      Object.keys(sharedProjectUnsubscribes.current).forEach(projectId => {
+        if (!newProjectIds.has(projectId)) {
+          sharedProjectUnsubscribes.current[projectId]();
+          delete sharedProjectUnsubscribes.current[projectId];
+          setSharedProjects(prev => {
+            const next = { ...prev };
+            delete next[projectId];
+            return next;
+          });
         }
-      }
-      setSharedProjects(newShared);
+      });
+
+      // Subscribe to new projects
+      snapshot.docs.forEach(shareDoc => {
+        const shareData = shareDoc.data();
+        const { projectId } = shareData;
+        if (!sharedProjectUnsubscribes.current[projectId]) {
+          sharedProjectUnsubscribes.current[projectId] = onSnapshot(doc(db, 'projects', projectId), (projectDoc) => {
+            if (projectDoc.exists()) {
+              setSharedProjects(prev => ({
+                ...prev,
+                [projectId]: {
+                  ...projectDoc.data() as SPWData,
+                  isShared: true,
+                  permission: shareData.permission
+                }
+              }));
+            }
+          });
+        }
+      });
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'shares (collectionGroup)');
     });
 
-    // Presence logic
+    return () => {
+      unsubscribeProfile();
+      unsubscribeSettings();
+      unsubscribeGlobalSettings();
+      unsubscribeOwned();
+      unsubscribeShared();
+      Object.values(sharedProjectUnsubscribes.current).forEach((unsubscribe: () => void) => unsubscribe());
+    };
+  }, [user]);
+
+  // Presence logic
+  useEffect(() => {
+    if (!user) return;
+
     const presenceRef = doc(db, 'presence', user.uid);
     const updatePresence = async () => {
       try {
         await setDoc(presenceRef, {
           uid: user.uid,
-          email: user.email,
-          displayName: user.displayName || userProfile?.firstName + ' ' + userProfile?.lastName || 'User',
-          photoURL: user.photoURL || userProfile?.photoURL,
+          email: user.email || null,
+          displayName: user.displayName || (userProfile ? `${userProfile.firstName} ${userProfile.lastName}`.trim() : null) || 'User',
+          photoURL: user.photoURL ?? userProfile?.photoURL ?? null,
           lastActive: new Date().toISOString(),
-          activeProjectId: activeProjectId
+          activeProjectId: activeProjectId || 'default'
         });
       } catch (err) {
         console.error('Error updating presence:', err);
       }
     };
 
-    const presenceInterval = setInterval(updatePresence, 30000);
+    const presenceInterval = setInterval(updatePresence, 300000); // 5 minutes
     updatePresence();
+    
+    return () => clearInterval(presenceInterval);
 
     const presencesQuery = query(
       collection(db, 'presence'),
       where('activeProjectId', '==', activeProjectId),
-      where('lastActive', '>', new Date(Date.now() - 60000).toISOString())
+      where('lastActive', '>', new Date(Date.now() - 360000).toISOString()) // 6 minutes
     );
 
     const unsubscribePresences = onSnapshot(presencesQuery, (snapshot) => {
@@ -581,18 +721,16 @@ export default function App() {
         .map(doc => doc.data() as ProjectPresence)
         .filter(p => p.uid !== user.uid);
       setActivePresences(presences);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'presence');
     });
 
     return () => {
-      unsubscribeProfile();
-      unsubscribeSettings();
-      unsubscribeOwned();
-      unsubscribeShared();
       unsubscribePresences();
       clearInterval(presenceInterval);
       deleteDoc(presenceRef).catch(console.error);
     };
-  }, [user, activeProjectId]);
+  }, [user, userProfile, activeProjectId]);
 
   // Ensure financial summary and pricing scenarios are synced on project load or switch
   useEffect(() => {
@@ -638,34 +776,52 @@ export default function App() {
   }, [activeProjectId, user, globalSettings.rateCard]);
 
   useEffect(() => {
-    if (!user || saving || !isDataLoaded) return;
+    if (!user || !isDataLoaded) return;
     
-    const save = async () => {
+    // Clear existing timer
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    
+    const activeProject = projects[activeProjectId] || sharedProjects[activeProjectId];
+    if (!activeProject || activeProjectId === 'default') return;
+
+    const dataString = JSON.stringify(activeProject.data);
+    
+    // Only save if data has changed
+    if (dataString === lastSavedData.current) return;
+
+    // Set new timer
+    debounceTimer.current = setTimeout(async () => {
       setSaving(true);
       try {
-        const activeProject = projects[activeProjectId] || sharedProjects[activeProjectId];
-        if (!activeProject || activeProjectId === 'default') return;
-
         const isShared = !!sharedProjects[activeProjectId];
         const permission = isShared ? (sharedProjects[activeProjectId] as any).permission : 'edit';
+        
+        if (!isShared || permission === 'edit') {
+          let projectName = activeProject.name;
+          if (!projectName || projectName === 'Untitled Project' || projectName === 'New Project') {
+            const account = activeProject.data?.projectSummary?.account;
+            const opportunity = activeProject.data?.projectSummary?.opportunity;
+            if (account || opportunity) {
+              projectName = [account, opportunity].filter(Boolean).join(' - ');
+            } else {
+              projectName = projectName || 'New Project';
+            }
+          }
 
-        if (isShared && permission === 'read') {
-          return;
+          // Save project data
+          const projectRef = doc(db, 'projects', activeProjectId);
+          await updateDoc(projectRef, {
+            name: projectName,
+            data: activeProject.data || INITIAL_DATA,
+            updatedAt: new Date().toISOString()
+          });
+          lastSavedData.current = dataString;
         }
 
-        // Save project data
-        const projectRef = doc(db, 'projects', activeProjectId);
-        await updateDoc(projectRef, {
-          name: activeProject.name,
-          data: activeProject.data,
-          updatedAt: new Date().toISOString()
-        });
-
-        // Save user settings
+        // Save user settings (always save the active project ID so it persists across reloads)
         const settingsRef = doc(db, 'settings', user.uid);
         await setDoc(settingsRef, {
           activeProjectId,
-          globalSettings,
           updatedAt: new Date().toISOString()
         }, { merge: true });
 
@@ -674,14 +830,21 @@ export default function App() {
       } finally {
         setSaving(false);
       }
-    };
-    save();
-  }, [projects, activeProjectId, globalSettings, sharedProjects]);
+    }, 3000); // 3 second debounce
+    
+    return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
+  }, [projects[activeProjectId], sharedProjects[activeProjectId], activeProjectId, user, isDataLoaded]);
 
   const handleLogin = async () => {
+    if (isLoggingIn) return;
     try {
+      setIsLoggingIn(true);
       setError(null);
       const provider = new GoogleAuthProvider();
+      // Add custom parameters to force account selection and ensure popup works reliably
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
       const result = await signInWithPopup(auth, provider);
       if (result.user) {
         logActivity(
@@ -693,11 +856,17 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Login error:', err);
+      // Ignore popup closed by user errors
+      if (err.code === 'auth/popup-closed-by-user') {
+        return;
+      }
       if (err.code === 'auth/operation-not-allowed') {
         setError('Google Sign-In is not enabled in Firebase. Please enable it in the console.');
       } else {
         setError(err.message || 'Failed to sign in with Google.');
       }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -739,7 +908,7 @@ export default function App() {
       });
 
       // Create user profile in Firestore
-      const isFirstAdmin = formData.email === 'john.vu@crosscloudpartners.com' || formData.email === 'support@crosscloudpartners.com';
+      const isFirstAdmin = formData.email === 'support@crosscloudpartners.com';
       await setDoc(doc(db, 'users', newUser.uid), {
         uid: newUser.uid,
         firstName: formData.firstName,
@@ -750,6 +919,17 @@ export default function App() {
         role: isFirstAdmin ? 'admin' : 'user',
         lastLogin: new Date().toISOString()
       });
+
+      try {
+        await setDoc(doc(db, 'public_profiles', formData.email.toLowerCase()), {
+          uid: newUser.uid,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          photoURL: null,
+        }, { merge: true });
+      } catch (e) {
+        console.error("Failed to write public profile:", e);
+      }
 
       logActivity(
         'user_registered',
@@ -781,7 +961,8 @@ export default function App() {
         'default': { name: 'New Project', data: INITIAL_DATA }
       });
       setActiveProjectId('default');
-      setGlobalSettings(INITIAL_GLOBAL_SETTINGS);
+      setBaseGlobalSettings(INITIAL_GLOBAL_SETTINGS);
+      setUserGlobalSettings({});
     } catch (err) {
       console.error('Logout error:', err);
       setError('Failed to sign out.');
@@ -1053,18 +1234,44 @@ export default function App() {
     saveToFirebase(newData);
   };
 
+  const updateGlobalSettings = async (updates: Partial<GlobalSettings>) => {
+    if (user && isSystemAdmin) {
+      const newSettings = { ...baseGlobalSettings, ...updates };
+      setBaseGlobalSettings(newSettings);
+      try {
+        await setDoc(doc(db, 'settings', 'global'), newSettings, { merge: true });
+        logActivity(
+          'admin_action',
+          `Updated global settings`,
+          user.uid,
+          user.displayName || user.email || 'System Admin'
+        );
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'settings/global');
+      }
+    } else if (user) {
+      // For regular users, save to their own settings
+      const newSettings = { ...userGlobalSettings, ...updates };
+      setUserGlobalSettings(newSettings);
+      try {
+        await setDoc(doc(db, 'settings', user.uid), { globalSettings: newSettings }, { merge: true });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `settings/${user.uid}`);
+      }
+    }
+  };
+
   const updateRateCard = (card: GlobalSettings['rateCard']) => {
-    setGlobalSettings(prev => ({
-      ...prev,
-      rateCard: card
-    }));
+    updateGlobalSettings({ rateCard: card });
   };
 
   const updatePhases = (phases: GlobalSettings['phases']) => {
-    setGlobalSettings(prev => ({
-      ...prev,
-      phases
-    }));
+    updateGlobalSettings({ phases });
+  };
+
+  const updateCountries = (countries: GlobalSettings['countries']) => {
+    const sortedCountries = [...countries].sort((a, b) => a.name.localeCompare(b.name));
+    updateGlobalSettings({ countries: sortedCountries });
   };
 
   const saveAsTemplate = (name: string, description: string) => {
@@ -1075,23 +1282,20 @@ export default function App() {
       data: JSON.parse(JSON.stringify(data))
     };
     
-    setGlobalSettings(prev => ({
-      ...prev,
-      templates: [...(prev.templates || []), newTemplate]
-    }));
+    updateGlobalSettings({
+      templates: [...(globalSettings.templates || []), newTemplate]
+    });
   };
 
   const deleteTemplate = (id: string) => {
-    setGlobalSettings(prev => ({
-      ...prev,
-      templates: (prev.templates || []).filter(t => t.id !== id)
-    }));
+    updateGlobalSettings({
+      templates: (globalSettings.templates || []).filter(t => t.id !== id)
+    });
   };
 
   const updateTemplate = (id: string, name: string, description: string, updateData: boolean = false) => {
-    setGlobalSettings(prev => ({
-      ...prev,
-      templates: (prev.templates || []).map(t => 
+    updateGlobalSettings({
+      templates: (globalSettings.templates || []).map(t => 
         t.id === id 
           ? { 
               ...t, 
@@ -1101,7 +1305,7 @@ export default function App() {
             } 
           : t
       )
-    }));
+    });
   };
 
   const applyTemplate = (templateId: string) => {
@@ -1127,10 +1331,7 @@ export default function App() {
   };
 
   const handleRenameRole = (oldName: string, newName: string, updatedRateCard: GlobalSettings['rateCard']) => {
-    setGlobalSettings(prev => ({
-      ...prev,
-      rateCard: updatedRateCard
-    }));
+    updateGlobalSettings({ rateCard: updatedRateCard });
     
     // Update role name in all projects
     setProjects(prev => {
@@ -1142,14 +1343,6 @@ export default function App() {
       });
       return updatedProjects;
     });
-  };
-
-  const updateCountries = (countries: GlobalSettings['countries']) => {
-    const sortedCountries = [...countries].sort((a, b) => a.name.localeCompare(b.name));
-    setGlobalSettings(prev => ({
-      ...prev,
-      countries: sortedCountries
-    }));
   };
 
   const handleProfileUpdate = () => {
@@ -1170,12 +1363,22 @@ export default function App() {
     );
   }
 
+  if (authMode === 'landing' && !user) {
+    return (
+      <LandingPage 
+        onSignIn={() => setAuthMode('signin')}
+        onRegister={() => setAuthMode('register')}
+      />
+    );
+  }
+
   if (authMode === 'signin' && !user) {
     return (
       <SignIn 
         onSignIn={handleEmailSignIn} 
         onGoogleSignIn={handleLogin} 
-        onSwitchToRegister={() => setAuthMode('register')} 
+        onSwitchToRegister={() => setAuthMode('register')}
+        onBackToLanding={() => setAuthMode('landing')}
       />
     );
   }
@@ -1184,7 +1387,8 @@ export default function App() {
     return (
       <Register 
         onRegister={handleEmailRegister} 
-        onSwitchToSignIn={() => setAuthMode('signin')} 
+        onSwitchToSignIn={() => setAuthMode('signin')}
+        onBackToLanding={() => setAuthMode('landing')}
       />
     );
   }
@@ -1242,8 +1446,8 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto py-4 scrollbar-hide">
-          {isSystemAdmin ? (
-            <div className="space-y-1 px-2">
+          {isSystemAdmin && (
+            <div className="space-y-1 px-2 mb-6">
               {!isSidebarCollapsed && (
                 <div className="px-4 mb-2 text-[11px] font-black text-[#94A3B8] uppercase tracking-[0.1em]">Administration</div>
               )}
@@ -1308,64 +1512,73 @@ export default function App() {
                 {!isSidebarCollapsed && <span className="truncate flex-1 text-left">Global Templates</span>}
               </button>
             </div>
-          ) : (
-            <>
-              {!isSidebarCollapsed && (
-                <div className="px-4 mb-2 text-[11px] font-black text-[#94A3B8] uppercase tracking-[0.1em]">Projects</div>
-              )}
-              <button 
-                onClick={handleCreateProject}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors",
-                  isSidebarCollapsed && "justify-center px-0"
-                )}
-                title="New project"
-              >
-                <FolderPlus className="w-4 h-4 text-gray-400" />
-                {!isSidebarCollapsed && <span>New project</span>}
-              </button>
-              {!isSidebarCollapsed && (Object.entries({ ...projects, ...sharedProjects }) as [string, { name: string, data: SPWData, isShared?: boolean, permission?: string }][]).map(([id, project]) => (
-                <div key={id} className="group relative px-2">
-                  <button 
-                    onClick={() => handleSwitchProject(id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-all duration-200",
-                      activeProjectId === id 
-                        ? "bg-blue-50 text-blue-700 font-semibold shadow-sm" 
-                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                    )}
-                    title={project.name}
-                  >
-                    {project.isShared ? (
-                      <Share2 className={cn("w-4 h-4 shrink-0", activeProjectId === id ? "text-blue-600" : "text-gray-400")} />
-                    ) : (
-                      <Folder className={cn("w-4 h-4 shrink-0", activeProjectId === id ? "text-blue-600" : "text-gray-400")} />
-                    )}
-                    <span className="truncate flex-1 text-left">{project.name}</span>
-                    {project.isShared && (
-                      <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-100 text-blue-600 bg-blue-50/50">
-                        {project.permission === 'edit' ? 'Edit' : 'Read'}
-                      </Badge>
-                    )}
-                  </button>
-                  {!project.isShared && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteProject(id, e)}
-                      className={cn(
-                        "absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-400 transition-all duration-200",
-                        "opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 pointer-events-auto"
-                      )}
-                      title="Delete project"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 pointer-events-none" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </>
           )}
+          
+          <div className="space-y-1 px-2">
+            {!isSystemAdmin && (
+              <>
+                {!isSidebarCollapsed && (
+                  <div className="px-4 mb-2 text-[11px] font-black text-[#94A3B8] uppercase tracking-[0.1em]">Projects</div>
+                )}
+                <button 
+                  onClick={handleCreateProject}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors rounded-xl",
+                    isSidebarCollapsed && "justify-center px-0"
+                  )}
+                  title="New project"
+                >
+                  <FolderPlus className="w-4 h-4 text-gray-400" />
+                  {!isSidebarCollapsed && <span>New project</span>}
+                </button>
+                {!isSidebarCollapsed && (Object.entries({ ...projects, ...sharedProjects }) as [string, { name: string, data: SPWData, isShared?: boolean, permission?: string }][]).map(([id, project]) => (
+              <div key={(project.isShared ? 'shared-' : 'owned-') + id} className="group relative px-2">
+                    <button 
+                      onClick={() => handleSwitchProject(id)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-xl transition-all duration-200",
+                        activeProjectId === id && activeTab !== 'admin'
+                          ? "bg-blue-50 text-blue-700 font-semibold shadow-sm" 
+                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      )}
+                      title={project.name}
+                    >
+                      {project.isShared ? (
+                        <Share2 className={cn("w-4 h-4 shrink-0", activeProjectId === id && activeTab !== 'admin' ? "text-blue-600" : "text-gray-400")} />
+                      ) : (
+                        <Folder className={cn("w-4 h-4 shrink-0", activeProjectId === id && activeTab !== 'admin' ? "text-blue-600" : "text-gray-400")} />
+                      )}
+                      <span className="truncate flex-1 text-left">
+                        {project.name && project.name !== 'Untitled Project' ? project.name : (
+                          [project.data?.projectSummary?.account, project.data?.projectSummary?.opportunity].filter(Boolean).join(' - ') || 'New Project'
+                        )}
+                      </span>
+                      {project.isShared && (
+                        <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-100 text-blue-600 bg-blue-50/50">
+                          {project.permission === 'edit' ? 'Edit' : 'Read'}
+                        </Badge>
+                      )}
+                    </button>
+                    {!project.isShared && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteProject(id, e)}
+                        className={cn(
+                          "absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-400 transition-all duration-200",
+                          "opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 pointer-events-auto"
+                        )}
+                        title="Delete project"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 pointer-events-none" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         </div>
+
 
           <div className="p-2 border-t border-gray-100 mt-auto space-y-1 relative">
             <AnimatePresence>
@@ -1484,7 +1697,10 @@ export default function App() {
               </AnimatePresence>
 
               <div 
-                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                onClick={() => {
+                  setIsProfileMenuOpen(!isProfileMenuOpen);
+                  setIsSettingsMenuOpen(false);
+                }}
                 className={cn(
                   "flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 transition-colors group relative cursor-pointer",
                   isSidebarCollapsed && "justify-center",
@@ -1519,7 +1735,10 @@ export default function App() {
           <div className="px-2 pb-2">
             <button
               id="btn-settings"
-              onClick={() => setIsSettingsMenuOpen(!isSettingsMenuOpen)}
+              onClick={() => {
+                setIsSettingsMenuOpen(!isSettingsMenuOpen);
+                setIsProfileMenuOpen(false);
+              }}
               className={cn(
                 "w-full flex items-center gap-4 px-4 py-3.5 transition-all duration-300 rounded-2xl",
                 isSidebarCollapsed ? "justify-center px-0" : "justify-start",
@@ -1598,17 +1817,20 @@ export default function App() {
                 </div>
               )}
               {!user && (
-                <Button id="btn-signin" onClick={handleLogin} className="bg-blue-600 hover:bg-blue-700 gap-2 h-9 sm:h-10 px-3 sm:px-4 text-xs sm:text-sm">
-                  <LogIn className="w-4 h-4" />
-                  <span className="hidden xs:inline">Sign In</span>
-                  <span className="xs:hidden">Login</span>
+                <Button id="btn-signin" onClick={handleLogin} disabled={isLoggingIn} className="bg-blue-600 hover:bg-blue-700 gap-2 h-9 sm:h-10 px-3 sm:px-4 text-xs sm:text-sm">
+                  {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  <span className="hidden xs:inline">{isLoggingIn ? 'Signing in...' : 'Sign In'}</span>
+                  <span className="xs:hidden">{isLoggingIn ? '...' : 'Login'}</span>
                 </Button>
               )}
               {user && (
                 <div className="flex items-center gap-2 sm:gap-3">
                   <div className="h-6 w-px bg-gray-200 mx-1 sm:mx-2" />
                   <div 
-                    onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                    onClick={() => {
+                      setIsProfileMenuOpen(!isProfileMenuOpen);
+                      setIsSettingsMenuOpen(false);
+                    }}
                     className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded-lg transition-colors xl:hidden"
                   >
                     <div className={cn(
@@ -1645,7 +1867,7 @@ export default function App() {
           )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            {!isSystemAdmin && (
+            {activeTab !== 'admin' && (
               <div className="sticky top-[-16px] sm:top-[-24px] z-20 bg-[#F8F9FA]/90 backdrop-blur-md flex justify-start overflow-x-auto pb-4 mb-6 no-scrollbar -mx-4 sm:-mx-6 px-4 sm:px-6 pt-4 border-b border-gray-200/50">
                 <TabsList id="tabs-list" className="bg-white border border-gray-200 p-1 h-auto flex-nowrap shadow-sm">
                   <TabsTrigger id="tab-summary" value="summary" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 px-4 py-2 gap-2">
@@ -1692,9 +1914,9 @@ export default function App() {
                     <h2 className="text-xl font-bold text-gray-900">Sign in to save your work</h2>
                     <p className="text-gray-600 mt-2">Connect your Google account to persist your pricing projects and access them from anywhere.</p>
                   </div>
-                  <Button id="btn-get-started" onClick={handleLogin} size="lg" className="bg-blue-600 hover:bg-blue-700 gap-2 px-8">
-                    <LogIn className="w-5 h-5" />
-                    Get Started
+                  <Button id="btn-get-started" onClick={handleLogin} disabled={isLoggingIn} size="lg" className="bg-blue-600 hover:bg-blue-700 gap-2 px-8">
+                    {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+                    {isLoggingIn ? 'Signing in...' : 'Get Started'}
                   </Button>
                 </CardContent>
               </Card>
@@ -1730,6 +1952,10 @@ export default function App() {
                 updateProjectSummary={updateProjectSummary}
                 updateProjectAndData={updateProjectAndData}
                 updatePhaseAllocation={updatePhaseAllocation}
+                updateGlobalSettings={setUserGlobalSettings}
+                permission={permission}
+                isShared={isShared}
+                ownerId={activeProject.ownerId}
               />
             </TabsContent>
             <TabsContent id="content-financials" value="financials" className="mt-0">
@@ -1788,7 +2014,7 @@ export default function App() {
               <TabsContent id="content-admin" value="admin" className="mt-0">
                 <AdminTab 
                   globalSettings={globalSettings}
-                  updateGlobalSettings={setGlobalSettings}
+                  updateGlobalSettings={updateGlobalSettings}
                   currentUser={user}
                   activeSubTab={adminSubTab}
                 />
@@ -1803,6 +2029,16 @@ export default function App() {
         user={user} 
         onUpdate={handleProfileUpdate}
       />
+      {activeProject && user && (
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          projectId={activeProjectId}
+          projectName={activeProject.name || 'Untitled Project'}
+          ownerId={activeProject.ownerId || user.uid}
+          ownerEmail={activeProject.ownerEmail || user.email || ''}
+        />
+      )}
       {projectToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
@@ -1815,6 +2051,23 @@ export default function App() {
           </div>
         </div>
       )}
+      <AIAgentSlideOut isOpen={isAIAgentOpen} onClose={() => setIsAIAgentOpen(false)} data={data} updateData={setData} isSidebarCollapsed={isSidebarCollapsed} globalSettings={globalSettings} />
+      
+      <button
+        onClick={() => setIsAIAgentOpen(true)}
+        className="fixed bottom-6 right-6 z-40 transition-all hover:scale-105 active:scale-95 overflow-hidden w-14 h-14 flex items-center justify-center bg-transparent rounded-full"
+      >
+        {globalSettings.aiAgentSettings?.profileImageURL ? (
+          <img 
+            src={globalSettings.aiAgentSettings.profileImageURL} 
+            alt="AI Agent" 
+            className="w-full h-full object-contain" 
+            referrerPolicy="no-referrer" 
+          />
+        ) : (
+          <Bot className="w-6 h-6" />
+        )}
+      </button>
     </div>
   );
 }

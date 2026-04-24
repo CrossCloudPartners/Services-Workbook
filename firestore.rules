@@ -29,40 +29,40 @@ service cloud.firestore {
     }
 
     function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.ownerId;
+      return isAuthenticated() && 'ownerId' in resource.data && request.auth.uid == resource.data.ownerId;
     }
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          ((request.auth.token.email == "john.vu@crosscloudpartners.com" || request.auth.token.email == "support@crosscloudpartners.com") && request.auth.token.email_verified == true));
+        (
+          (request.auth.token.get('email', '') == "support@crosscloudpartners.com" && request.auth.token.get('email_verified', false) == true) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin')
+        );
     }
 
     function isVerified() {
-      return isAuthenticated() && request.auth.token.email_verified == true;
+      return isAuthenticated() && request.auth.token.get('email_verified', false) == true;
     }
 
     function hasReadPermission(projectId) {
-      return isVerified() && 'email' in request.auth.token && 
-             exists(/databases/$(database)/documents/projects/$(projectId)/shares/$(request.auth.token.email.lower()));
+      let userEmail = request.auth.token.email.lower();
+      return isAuthenticated() && exists(/databases/$(database)/documents/projects/$(projectId)/shares/$(userEmail));
     }
 
     function hasEditPermission(projectId) {
-      return isVerified() && 'email' in request.auth.token &&
-             exists(/databases/$(database)/documents/projects/$(projectId)/shares/$(request.auth.token.email.lower())) &&
-             get(/databases/$(database)/documents/projects/$(projectId)/shares/$(request.auth.token.email.lower())).data.permission == "edit";
+      let userEmail = request.auth.token.email.lower();
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/projects/$(projectId)/shares/$(userEmail)) &&
+             get(/databases/$(database)/documents/projects/$(projectId)/shares/$(userEmail)).data.permission == "edit";
     }
 
     function isValidProject(data) {
-      // Allow the new structure: { id, ownerId, projects, activeProjectId, updatedAt }
-      // Or the old structure if needed, but let's enforce the new one for now.
-      return data.keys().hasAll(['id', 'ownerId', 'projects', 'activeProjectId', 'updatedAt']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.ownerId is string && data.ownerId.size() <= 128 &&
-             data.ownerId == request.auth.uid &&
-             data.projects is map &&
-             data.activeProjectId is string &&
-             data.updatedAt is string && data.updatedAt.size() <= 64;
+      return data.keys().hasAll(['id', 'ownerId', 'data', 'updatedAt']) &&
+             data.id is string &&
+             data.ownerId is string &&
+             data.data is map &&
+             data.updatedAt is string;
     }
 
     function isValidUser(data) {
@@ -82,7 +82,7 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || isAdmin() || request.auth.token.get('email', '').lower() == "john.vu@crosscloudpartners.com" || request.auth.token.get('email', '').lower() == "juantvu@gmail.com";
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
       allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) &&
                     (isAdmin() || request.resource.data.email == resource.data.email) && // email is immutable for non-admins
@@ -90,24 +90,33 @@ service cloud.firestore {
     }
 
     match /projects/{projectId} {
-      allow read: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isAdmin() || hasReadPermission(projectId));
-      allow create: if isAuthenticated() && isValidProject(request.resource.data) && request.auth.uid == request.resource.data.ownerId;
-      allow update: if (resource.data.ownerId == request.auth.uid || isAdmin() || hasEditPermission(projectId)) && isValidProject(request.resource.data) && 
+      allow get: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid || 
+        isAdmin() || 
+        hasReadPermission(projectId)
+      );
+      allow list: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.ownerId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && isValidProject(request.resource.data) && request.resource.data.ownerId == request.auth.uid;
+      allow update: if (isAdmin() || resource.data.ownerId == request.auth.uid || hasEditPermission(projectId)) && 
+                    isValidProject(request.resource.data) &&
                     (isAdmin() || request.resource.data.ownerId == resource.data.ownerId);
-      allow delete: if resource.data.ownerId == request.auth.uid || isAdmin();
+      allow delete: if isAdmin() || resource.data.ownerId == request.auth.uid;
+
+      match /shares/{shareId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          isAdmin() ||
+          get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid
+        );
+      }
     }
 
     // Collection Group rules for 'shares'
-    match /{path=**}/shares/{email} {
-      allow read: if isAuthenticated() && (
-        (isVerified() && 'email' in request.auth.token && (request.auth.token.email.lower() == email.lower() || request.auth.token.email.lower() == resource.data.email)) || 
-        isAdmin() ||
-        (path.size() >= 2 && path[path.size() - 2] == 'projects' && get(/databases/$(database)/documents/projects/$(path[path.size() - 1])).data.ownerId == request.auth.uid)
-      );
-      allow write: if isAuthenticated() && (
-        isAdmin() ||
-        (path.size() >= 2 && path[path.size() - 2] == 'projects' && get(/databases/$(database)/documents/projects/$(path[path.size() - 1])).data.ownerId == request.auth.uid)
-      );
+    match /{path=**}/shares/{shareId} {
+      allow read: if isAuthenticated();
     }
 
     match /activity_logs/{logId} {
@@ -119,7 +128,25 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
+
+    match /settings/global {
+      allow read: if isAuthenticated();
+    }
+
+    match /settings/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
     
+    match /public_profiles/{emailId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        request.auth.token.get('email', '').lower() == emailId || 
+        isAdmin() ||
+        request.auth.token.get('email', '').lower() == "john.vu@crosscloudpartners.com" ||
+        request.auth.token.get('email', '').lower() == "juantvu@gmail.com"
+      );
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;

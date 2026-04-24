@@ -12,10 +12,12 @@ import {
   AlertCircle,
   Building2,
   ZoomIn,
-  Crop as CropIcon
+  Crop as CropIcon,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { User as FirebaseUser, updateProfile, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,6 +44,9 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdate }: Profil
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(user?.photoURL || null);
   
   // Cropper state
@@ -194,6 +199,21 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdate }: Profil
         photoURL: photoPreview,
         updatedAt: new Date().toISOString()
       });
+
+      // Update Public Profile
+      if (currentUser.email) {
+        try {
+          const publicRef = doc(db, 'public_profiles', currentUser.email.toLowerCase());
+          await setDoc(publicRef, {
+            uid: currentUser.uid,
+            firstName,
+            lastName,
+            photoURL: photoPreview,
+          }, { merge: true });
+        } catch (e) {
+          console.error("Failed to update public profile:", e);
+        }
+      }
 
       // Force a reload of the user data
       await currentUser.reload();
@@ -380,37 +400,64 @@ export default function ProfileModal({ isOpen, onClose, user, onUpdate }: Profil
                 <form onSubmit={handleChangePassword} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="current-password text-gray-500">Current Password</Label>
-                    <Input 
-                      id="current-password"
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className="h-11 bg-gray-50 border-gray-200 focus:bg-white"
-                      placeholder="••••••••"
-                    />
+                    <div className="relative">
+                      <Input 
+                        id="current-password"
+                        type={showCurrentPassword ? "text" : "password"}
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="h-11 bg-gray-50 border-gray-200 focus:bg-white pr-10"
+                        placeholder="••••••••"
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                      >
+                        {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="new-password text-gray-500">New Password</Label>
-                      <Input 
-                        id="new-password"
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="h-11 bg-gray-50 border-gray-200 focus:bg-white"
-                        placeholder="••••••••"
-                      />
+                      <div className="relative">
+                        <Input 
+                          id="new-password"
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="h-11 bg-gray-50 border-gray-200 focus:bg-white pr-10"
+                          placeholder="••••••••"
+                        />
+                        <button 
+                          type="button" 
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="confirm-password text-gray-500">Confirm</Label>
-                      <Input 
-                        id="confirm-password"
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="h-11 bg-gray-50 border-gray-200 focus:bg-white"
-                        placeholder="••••••••"
-                      />
+                      <div className="relative">
+                        <Input 
+                          id="confirm-password"
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="h-11 bg-gray-50 border-gray-200 focus:bg-white pr-10"
+                          placeholder="••••••••"
+                        />
+                        <button 
+                          type="button" 
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <Button 

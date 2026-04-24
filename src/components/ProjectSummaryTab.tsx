@@ -389,7 +389,17 @@ export default function ProjectSummaryTab({
               <Input
                 id="duration"
                 type="number"
-                value={data.duration}
+                value={data.duration === 0 ? '' : data.duration}
+                onFocus={(e) => {
+                  if (data.duration === 0) {
+                    handleChange('duration', '');
+                  }
+                }}
+                onBlur={(e) => {
+                  if (e.target.value === '') {
+                    handleChange('duration', 0);
+                  }
+                }}
                 onChange={(e) => handleChange('duration', parseInt(e.target.value) || 0)}
                 className="border-gray-300 focus:ring-blue-500"
               />

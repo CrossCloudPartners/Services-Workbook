@@ -154,6 +154,12 @@ export interface GlobalSettings {
   countries: { id: string; name: string; currency: string }[];
   phases: Phase[];
   templates?: ProjectTemplate[];
+  aiAgentSettings?: {
+    apiKey?: string;
+    personaPrompt?: string;
+    personality?: string;
+    profileImageURL?: string; // New field
+  };
 }
 
 export interface ProjectShare {

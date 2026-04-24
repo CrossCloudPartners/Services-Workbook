@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ResourcePlanEntry, RateCardEntry, ProjectSummary, Phase } from '../types';
+import { ResourcePlanEntry, RateCardEntry, ProjectSummary, Phase, GlobalSettings } from '../types';
 import { 
   Users, 
   Plus, 
@@ -53,6 +55,10 @@ interface Props {
   updateProjectSummary: (summary: Partial<ProjectSummary>) => void;
   updateProjectAndData: (summary: Partial<ProjectSummary>, plan: ResourcePlanEntry[]) => void;
   updatePhaseAllocation: (allocation: Record<string, string>) => void;
+  updateGlobalSettings: (settings: Partial<GlobalSettings>) => void;
+  permission?: string;
+  isShared?: boolean;
+  ownerId?: string;
 }
 
 import { recalculateEntry, calculateTotalHours } from '../lib/calculations';
@@ -445,9 +451,14 @@ const SortableRow = ({
       ) : viewMode === 'daily' ? (
         allDays.map(day => {
           const phaseId = phaseAllocation?.[day];
-          const phase = (phases || []).find(p => p.id === phaseId);
-          const phaseColor = phase?.color ? hexToRgba(phase.color, 0.2) : 'transparent';
+          let phase = (phases || []).find(p => p.id === phaseId);
           const isWeekend = !isBusinessDay(parseDateLocal(day));
+          
+          if (phaseAllocation?.[day] === undefined && isWeekend) {
+            phase = (phases || []).find(p => p.name.toLowerCase() === 'weekend');
+          }
+
+          const phaseColor = phase?.color ? hexToRgba(phase.color, 0.2) : 'transparent';
           
           return (
             <TableCell 
@@ -548,6 +559,7 @@ interface ResourceTableProps {
   phases: Phase[];
   phaseAllocation: Record<string, string>;
   updatePhaseAllocation: (allocation: Record<string, string>) => void;
+  permission?: string;
   // Props for SortableRow
   rateCard: RateCardEntry[];
   uniqueRoles: string[];
@@ -581,6 +593,7 @@ const ResourceTable = ({
   phases,
   phaseAllocation,
   updatePhaseAllocation,
+  permission = 'edit',
   ...rowProps
 }: ResourceTableProps) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -795,12 +808,17 @@ const ResourceTable = ({
               {viewMode === 'daily' ? (
                 allDays.map((day) => {
                   const phaseId = phaseAllocation?.[day];
-                  const phase = (phases || []).find(p => p.id === phaseId);
+                  let phase = (phases || []).find(p => p.id === phaseId);
                   const isWeekend = !isBusinessDay(parseDateLocal(day));
+                  
+                  if (phaseAllocation?.[day] === undefined && isWeekend) {
+                    phase = (phases || []).find(p => p.name.toLowerCase() === 'weekend');
+                  }
+                  
                   return (
                     <TableHead key={`phase-${day}`} className={cn("p-0 h-8 border-l border-b border-gray-200 sticky top-12 z-30", isWeekend ? "bg-gray-100/50" : "bg-gray-50")}>
                       <Select 
-                        value={phaseAllocation[day] || ""} 
+                        value={phaseAllocation?.[day] !== undefined ? (phaseAllocation[day] || "none") : (isWeekend ? (phase?.id || "none") : "none")} 
                         onValueChange={(val) => handlePhaseChange(day, val, false)}
                       >
                         <SelectTrigger className="h-full w-full border-none rounded-none focus:ring-0 p-0 px-1 text-[9px] font-bold uppercase transition-colors" style={{ backgroundColor: phase?.color ? hexToRgba(phase.color, 0.15) : 'transparent', color: phase?.color || (isWeekend ? '#64748B' : '#94A3B8') }}>
@@ -896,7 +914,8 @@ const ResourceTable = ({
                   id="btn-add-resource-lines"
                   variant="ghost" 
                   onClick={() => handleAddNewRow(rowsToAdd)}
-                  className="text-blue-600 font-bold text-sm hover:bg-blue-50 gap-2 px-4 h-9 rounded-lg transition-all w-full sm:w-auto justify-center"
+                  disabled={permission !== 'edit'}
+                  className={cn("text-blue-600 font-bold text-sm hover:bg-blue-50 gap-2 px-4 h-9 rounded-lg transition-all w-full sm:w-auto justify-center", permission !== 'edit' && "opacity-50 cursor-not-allowed")}
                 >
                   <Plus className="w-4 h-4" />
                   Add Resource Lines
@@ -928,7 +947,11 @@ export default function ResourcePlanningTab({
   updateData, 
   updateProjectSummary,
   updateProjectAndData,
-  updatePhaseAllocation
+  updatePhaseAllocation,
+  updateGlobalSettings,
+  permission = 'edit',
+  isShared,
+  ownerId
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<'summary' | 'daily' | 'weekly'>('summary');
@@ -938,6 +961,38 @@ export default function ResourcePlanningTab({
     start: { id: string, col: string } | null;
     end: { id: string, col: string } | null;
   }>({ start: null, end: null });
+
+  const handlePhaseChange = (key: string, val: string, isWeekly: boolean) => {
+    const newAllocation = { ...(phaseAllocation || {}) };
+    const phaseValue = val === 'none' ? '' : val;
+    
+    if (isWeekly) {
+      newAllocation[`week_${key}`] = phaseValue;
+      const daysInWeek = getAllDaysInWeek(key, projectSummary.startDate, projectSummary.endDate);
+      daysInWeek.forEach(day => {
+        const isWeekend = !isBusinessDay(parseDateLocal(day));
+        if (!isWeekend) {
+          newAllocation[day] = phaseValue;
+        }
+      });
+    } else {
+      newAllocation[key] = phaseValue;
+    }
+    updatePhaseAllocation(newAllocation);
+  };
+
+  const handleApplyOwnerSettings = async () => {
+    if (!ownerId) return;
+    try {
+      const settingsSnap = await getDoc(doc(db, 'settings', ownerId));
+      if (settingsSnap.exists()) {
+        const ownerSettings = settingsSnap.data().globalSettings;
+        updateGlobalSettings(ownerSettings);
+      }
+    } catch (error) {
+      console.error("Error applying owner settings:", error);
+    }
+  };
   const [isSelecting, setIsSelecting] = useState(false);
 
   const uniqueRoles = Array.from(new Set(rateCard.map(r => r.role))).sort();
@@ -1390,6 +1445,7 @@ export default function ResourcePlanningTab({
     phases,
     phaseAllocation,
     updatePhaseAllocation,
+    permission,
     ...commonRowProps
   };
 
@@ -1434,7 +1490,8 @@ export default function ResourcePlanningTab({
                           variant="outline" 
                           size="sm" 
                           onClick={() => handleAddDay(daysToAdd)}
-                          className="h-8 border-blue-200 text-blue-600 hover:bg-blue-50 gap-2"
+                          disabled={permission !== 'edit'}
+                          className={cn("h-8 border-blue-200 text-blue-600 hover:bg-blue-50 gap-2", permission !== 'edit' && "opacity-50 cursor-not-allowed")}
                         >
                           <Plus className="w-3 h-3" />
                           Add Days
@@ -1443,7 +1500,8 @@ export default function ResourcePlanningTab({
                           variant="outline" 
                           size="sm" 
                           onClick={() => handleRemoveDay(daysToAdd)}
-                          className="h-8 border-red-100 text-red-600 hover:bg-red-50 gap-2"
+                          disabled={permission !== 'edit'}
+                          className={cn("h-8 border-red-100 text-red-600 hover:bg-red-50 gap-2", permission !== 'edit' && "opacity-50 cursor-not-allowed")}
                         >
                           <Trash2 className="w-3 h-3" />
                           Remove
@@ -1487,6 +1545,11 @@ export default function ResourcePlanningTab({
               <Users className="w-5 h-5 text-blue-600" />
               Resource Allocation Plan
             </CardTitle>
+            {isShared && ownerId && (
+              <Button onClick={handleApplyOwnerSettings} variant="outline" size="sm">
+                Apply Owner Settings
+              </Button>
+            )}
             <ViewModeToggle size="sm" viewMode={viewMode} setViewMode={setViewMode} />
           </div>
           <div className="flex items-center gap-2">

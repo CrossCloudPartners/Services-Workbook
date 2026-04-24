@@ -3,16 +3,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogIn, Calculator, Chrome } from 'lucide-react';
+import { LogIn, Calculator, Chrome, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface SignInProps {
   onSignIn: (email: string, pass: string) => void;
   onGoogleSignIn: () => void;
   onSwitchToRegister: () => void;
+  onBackToLanding: () => void;
 }
 
-export default function SignIn({ onSignIn, onGoogleSignIn, onSwitchToRegister }: SignInProps) {
+export default function SignIn({ onSignIn, onGoogleSignIn, onSwitchToRegister, onBackToLanding }: SignInProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,12 @@ export default function SignIn({ onSignIn, onGoogleSignIn, onSwitchToRegister }:
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
+          <button 
+             onClick={onBackToLanding}
+             className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 mx-auto text-sm"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Landing Page
+          </button>
           <div className="bg-blue-600 w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
             <Calculator className="w-7 h-7 text-white" />
           </div>

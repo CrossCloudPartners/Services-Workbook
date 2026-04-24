@@ -4,15 +4,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { LogIn, UserPlus, Calculator, ArrowRight } from 'lucide-react';
+import { LogIn, UserPlus, Calculator, ArrowRight, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface RegisterProps {
   onRegister: (data: any) => void;
   onSwitchToSignIn: () => void;
+  onBackToLanding: () => void;
 }
 
-export default function Register({ onRegister, onSwitchToSignIn }: RegisterProps) {
+export default function Register({ onRegister, onSwitchToSignIn, onBackToLanding }: RegisterProps) {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -23,6 +24,8 @@ export default function Register({ onRegister, onSwitchToSignIn }: RegisterProps
     acceptTerms: false
   });
 
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,6 +67,12 @@ export default function Register({ onRegister, onSwitchToSignIn }: RegisterProps
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
+          <button 
+             onClick={onBackToLanding}
+             className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 mx-auto text-sm"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Landing Page
+          </button>
           <div className="bg-blue-600 w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
             <Calculator className="w-7 h-7 text-white" />
           </div>
@@ -103,11 +112,41 @@ export default function Register({ onRegister, onSwitchToSignIn }: RegisterProps
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" placeholder="••••••••" value={formData.password} onChange={handleChange} />
+                <div className="relative">
+                  <Input 
+                    id="password" 
+                    type={showPassword ? "text" : "password"} 
+                    placeholder="••••••••" 
+                    value={formData.password} 
+                    onChange={handleChange} 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <Input id="confirmPassword" type="password" placeholder="••••••••" value={formData.confirmPassword} onChange={handleChange} />
+                <div className="relative">
+                  <Input 
+                    id="confirmPassword" 
+                    type={showConfirmPassword ? "text" : "password"} 
+                    placeholder="••••••••" 
+                    value={formData.confirmPassword} 
+                    onChange={handleChange} 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="flex items-start space-x-2 pt-2">
                 <Checkbox 
