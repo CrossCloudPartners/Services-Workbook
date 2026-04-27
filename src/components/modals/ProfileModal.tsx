@@ -21,8 +21,10 @@ export default function ProfileModal({ open, onClose, profile, onUpdated }: Prop
     lastName: profile.last_name,
     companyName: profile.company_name,
   });
+  const [photoUrl, setPhotoUrl] = useState(profile.photo_url ?? '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   useEffect(() => {
     if (profile) {
@@ -31,6 +33,7 @@ export default function ProfileModal({ open, onClose, profile, onUpdated }: Prop
         lastName: profile.last_name,
         companyName: profile.company_name,
       });
+      setPhotoUrl(profile.photo_url ?? '');
     }
   }, [profile]);
 
@@ -50,13 +53,23 @@ export default function ProfileModal({ open, onClose, profile, onUpdated }: Prop
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadError('');
     const ext = file.name.split('.').pop();
     const path = `avatars/${profile.uid}.${ext}`;
     const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
-    if (!upErr) {
-      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-      await supabase.from('users').update({ photo_url: data.publicUrl }).eq('uid', profile.uid);
+    if (upErr) {
+      setUploadError('Upload failed. Please try again.');
+      setUploading(false);
+      return;
+    }
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+    const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+    const { error: dbErr } = await supabase.from('users').update({ photo_url: publicUrl }).eq('uid', profile.uid);
+    if (!dbErr) {
+      setPhotoUrl(publicUrl);
       onUpdated();
+    } else {
+      setUploadError('Failed to save photo. Please try again.');
     }
     setUploading(false);
   }
@@ -75,7 +88,7 @@ export default function ProfileModal({ open, onClose, profile, onUpdated }: Prop
           <div className="flex flex-col items-center gap-3">
             <div className="relative">
               <Avatar className="w-20 h-20">
-                {profile.photo_url && <AvatarImage src={profile.photo_url} />}
+                {photoUrl && <AvatarImage src={photoUrl} />}
                 <AvatarFallback className="text-2xl font-bold bg-[#2E86C1] text-white">
                   {initials}
                 </AvatarFallback>
@@ -86,6 +99,7 @@ export default function ProfileModal({ open, onClose, profile, onUpdated }: Prop
               </label>
             </div>
             {uploading && <p className="text-xs text-gray-400">Uploading...</p>}
+            {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
             <p className="text-xs text-gray-400">{profile.email}</p>
           </div>
 
