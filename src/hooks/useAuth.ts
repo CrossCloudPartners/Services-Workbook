@@ -68,7 +68,12 @@ export function useAuth() {
     companyName: string
   ) {
     const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
+    if (error) {
+      if (error.message?.toLowerCase().includes('already registered') || (error as { code?: string }).code === 'user_already_exists') {
+        throw new Error('An account with this email already exists. Please sign in instead.');
+      }
+      throw error;
+    }
     if (!data.user) throw new Error('No user returned');
 
     const profile = await getOrCreateUserProfile(

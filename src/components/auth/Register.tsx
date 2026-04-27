@@ -76,7 +76,14 @@ export default function Register({ onRegister, onGoogleSignIn, onSignIn, onBack 
 
           {error && (
             <Alert className="mb-5 border-red-200 bg-red-50">
-              <AlertDescription className="text-red-700 text-sm">{error}</AlertDescription>
+              <AlertDescription className="text-red-700 text-sm">
+                {error}
+                {error.includes('sign in') && (
+                  <button onClick={onSignIn} className="ml-1 underline font-medium hover:text-red-900">
+                    Sign in now
+                  </button>
+                )}
+              </AlertDescription>
             </Alert>
           )}
 
