@@ -83,7 +83,7 @@ function SidebarItem({
           {onDelete && (
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded p-0.5 transition-all"
+              className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-0.5 transition-all flex-shrink-0"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
