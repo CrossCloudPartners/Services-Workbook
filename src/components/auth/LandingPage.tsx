@@ -1,4 +1,4 @@
-import { Calculator, ArrowRight, Zap, BarChart3, ShieldCheck } from 'lucide-react';
+import { Calculator, ArrowRight, Zap, ChartBar as BarChart3, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion } from 'motion/react';
 

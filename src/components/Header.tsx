@@ -1,4 +1,4 @@
-import { Calculator, Share2, Loader2, CheckCircle2, LogOut, UserCircle, ChevronDown } from 'lucide-react';
+import { Calculator, Share2, Loader as Loader2, CircleCheck as CheckCircle2, LogOut, CircleUser as UserCircle, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader as Loader2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileText, TrendingUp, Settings2, Users, History, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';

@@ -1,8 +1,4 @@
-import {
-  Calculator, Folder, FolderPlus, Share2, Trash2,
-  CreditCard, Globe, Layers, BarChart3, Users, Settings2,
-  LayoutTemplate, PanelLeftClose, PanelLeftOpen, ChevronRight
-} from 'lucide-react';
+import { Calculator, Folder, FolderPlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
