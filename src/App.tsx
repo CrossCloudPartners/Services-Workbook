@@ -167,12 +167,14 @@ export default function App() {
         activeView={activeView}
         isAdmin={isAdmin}
         collapsed={sidebarCollapsed}
+        profile={auth.profile}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         onSelectProject={(id) => { setActiveView({ type: 'project', projectId: id }); setActiveTab('summary'); }}
         onNewProject={handleNewProject}
         onDeleteProject={handleDeleteProject}
         onSelectSettings={(tab) => setActiveView({ type: 'settings', tab })}
         onSelectAdmin={(tab) => setActiveView({ type: 'admin', tab })}
+        onProfile={() => setShowProfile(true)}
       />
 
       {/* Main content */}
@@ -184,8 +186,6 @@ export default function App() {
           saving={saving}
           collaborators={[]}
           onShare={() => setShowShare(true)}
-          onProfile={() => setShowProfile(true)}
-          onSignOut={auth.signOut}
         />
 
         {/* Page content */}
@@ -404,6 +404,7 @@ export default function App() {
           onClose={() => setShowProfile(false)}
           profile={auth.profile}
           onUpdated={auth.refreshProfile}
+          onSignOut={auth.signOut}
         />
       )}
     </div>

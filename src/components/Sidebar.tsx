@@ -1,8 +1,8 @@
-import { Calculator, Folder, FolderPlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, ChevronRight } from 'lucide-react';
+import { Calculator, Folder, FolderPlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Project } from '../types/index';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Project, UserProfile } from '../types/index';
 
 type ActiveView =
   | { type: 'project'; projectId: string }
@@ -15,12 +15,14 @@ interface Props {
   activeView: ActiveView | null;
   isAdmin: boolean;
   collapsed: boolean;
+  profile: UserProfile | null;
   onToggleCollapse: () => void;
   onSelectProject: (id: string) => void;
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
   onSelectSettings: (tab: 'rates' | 'countries' | 'phases') => void;
   onSelectAdmin: (tab: 'dashboard' | 'users' | 'metadata' | 'templates' | 'ai') => void;
+  onProfile: () => void;
 }
 
 function SectionLabel({ label, collapsed }: { label: string; collapsed: boolean }) {
@@ -39,6 +41,7 @@ function SidebarItem({
   collapsed,
   onClick,
   badge,
+  badgeVariant = 'default',
   onDelete,
 }: {
   icon: React.ElementType;
@@ -47,6 +50,7 @@ function SidebarItem({
   collapsed: boolean;
   onClick: () => void;
   badge?: string;
+  badgeVariant?: 'default' | 'edit';
   onDelete?: () => void;
 }) {
   return (
@@ -66,7 +70,12 @@ function SidebarItem({
         <>
           <span className="flex-1 truncate">{label}</span>
           {badge && (
-            <Badge className="text-[10px] font-medium border border-blue-100 text-blue-600 bg-blue-50/50 rounded-full px-1.5 py-0">
+            <Badge className={cn(
+              'text-[10px] font-semibold rounded px-1.5 py-0 border',
+              badgeVariant === 'edit'
+                ? 'border-blue-200 text-blue-600 bg-blue-50'
+                : 'border-blue-100 text-blue-600 bg-blue-50/50'
+            )}>
               {badge}
             </Badge>
           )}
@@ -90,21 +99,29 @@ export default function Sidebar({
   activeView,
   isAdmin,
   collapsed,
+  profile,
   onToggleCollapse,
   onSelectProject,
   onNewProject,
   onDeleteProject,
   onSelectSettings,
   onSelectAdmin,
+  onProfile,
 }: Props) {
   const activeProjectId = activeView?.type === 'project' ? activeView.projectId : null;
   const activeSettingsTab = activeView?.type === 'settings' ? activeView.tab : null;
   const activeAdminTab = activeView?.type === 'admin' ? activeView.tab : null;
 
+  const initials = profile
+    ? `${profile.first_name?.[0] ?? ''}${profile.last_name?.[0] ?? ''}`.toUpperCase()
+    : '?';
+
+  const displayName = profile ? `${profile.first_name} ${profile.last_name}` : '';
+
   return (
     <div
       className={cn(
-        'h-full bg-white border-r border-gray-200 shadow-[4px_0_10px_-5px_rgba(0,0,0,0.05)] flex flex-col transition-all duration-200 overflow-hidden',
+        'h-full bg-white border-r border-gray-200 flex flex-col transition-all duration-200 overflow-hidden',
         collapsed ? 'w-14' : 'w-60'
       )}
     >
@@ -147,7 +164,7 @@ export default function Sidebar({
             onClick={onNewProject}
           >
             <FolderPlus className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-500 font-medium">New Project</span>
+            <span className="text-gray-500 font-medium">New project</span>
           </div>
         )}
         {collapsed && (
@@ -168,6 +185,8 @@ export default function Sidebar({
             active={activeProjectId === p.id}
             collapsed={collapsed}
             onClick={() => onSelectProject(p.id)}
+            badge={activeProjectId === p.id ? 'Edit' : undefined}
+            badgeVariant="edit"
             onDelete={() => onDeleteProject(p.id)}
           />
         ))}
@@ -218,15 +237,53 @@ export default function Sidebar({
         />
       </div>
 
-      {/* Bottom collapse indicator */}
-      {!collapsed && (
-        <div className="border-t border-gray-100 px-3 py-2">
-          <div className="flex items-center gap-1 text-[10px] text-gray-400">
-            <ChevronRight className="w-3 h-3" />
-            <span>Collapse sidebar</span>
-          </div>
-        </div>
-      )}
+      {/* Bottom: User profile + Settings */}
+      <div className="border-t border-gray-100 flex-shrink-0">
+        {/* User profile */}
+        <button
+          onClick={onProfile}
+          className={cn(
+            'w-full flex items-center gap-3 px-3 py-3 hover:bg-gray-50 transition-colors text-left',
+            collapsed && 'justify-center px-2'
+          )}
+          title={collapsed ? displayName : undefined}
+        >
+          <Avatar className="w-9 h-9 flex-shrink-0">
+            {profile?.photo_url ? <AvatarImage src={profile.photo_url} /> : null}
+            <AvatarFallback className="bg-[#2E86C1] text-white text-xs font-bold">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{displayName}</p>
+              <p className="text-xs text-gray-400 leading-tight mt-0.5">
+                {profile?.role === 'admin' ? 'Admin' : 'Free'}
+              </p>
+            </div>
+          )}
+        </button>
+
+        {/* Settings link */}
+        {!collapsed && (
+          <button
+            onClick={() => onSelectSettings('rates')}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors border-t border-gray-100"
+          >
+            <Settings className="w-4 h-4 text-gray-400" />
+            <span>Settings</span>
+          </button>
+        )}
+        {collapsed && (
+          <button
+            onClick={() => onSelectSettings('rates')}
+            className="w-full flex items-center justify-center py-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-100"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

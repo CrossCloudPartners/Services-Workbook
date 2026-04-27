@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Camera, Save } from 'lucide-react';
+import { Camera, Save, LogOut } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,9 +13,10 @@ interface Props {
   onClose: () => void;
   profile: UserProfile;
   onUpdated: () => void;
+  onSignOut: () => void;
 }
 
-export default function ProfileModal({ open, onClose, profile, onUpdated }: Props) {
+export default function ProfileModal({ open, onClose, profile, onUpdated, onSignOut }: Props) {
   const [form, setForm] = useState({
     firstName: profile.first_name,
     lastName: profile.last_name,
@@ -124,6 +125,15 @@ export default function ProfileModal({ open, onClose, profile, onUpdated }: Prop
           <Button onClick={handleSave} disabled={saving} className="w-full bg-blue-600 hover:bg-blue-700 gap-1.5">
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={onSignOut}
+            className="w-full gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
           </Button>
         </div>
       </DialogContent>
