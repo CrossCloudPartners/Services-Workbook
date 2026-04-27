@@ -277,7 +277,7 @@ export default function App() {
                 ) : (
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
                     {/* Tab bar — flat underline style, sticky on scroll */}
-                    <div className="bg-white border border-gray-200 rounded-xl mb-5 overflow-x-auto sticky top-0 z-20">
+                    <div className="bg-white border border-gray-200 rounded-xl mb-5 sticky top-0 z-20">
                       <TabsList className="flex bg-transparent p-0 h-auto w-full">
                         {[
                           { value: 'summary', icon: FileText, label: 'Project Summary' },
@@ -290,10 +290,10 @@ export default function App() {
                           <TabsTrigger
                             key={tab.value}
                             value={tab.value}
-                            className="flex items-center justify-center gap-1.5 flex-1 px-3 py-3.5 text-sm text-gray-500 font-medium transition-all rounded-none whitespace-nowrap border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-gray-900 data-[state=active]:font-semibold hover:text-gray-700 hover:bg-gray-50 first:rounded-tl-xl last:rounded-tr-xl"
+                            className="flex items-center justify-center gap-1.5 flex-1 min-w-0 px-2 py-3.5 text-sm text-gray-500 font-medium transition-all rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-gray-900 data-[state=active]:font-semibold hover:text-gray-700 hover:bg-gray-50 first:rounded-tl-xl last:rounded-tr-xl"
                           >
-                            <tab.icon className="w-3.5 h-3.5 shrink-0" />
-                            {tab.label}
+                            <tab.icon className="w-3.5 h-3.5 shrink-0 hidden sm:block" />
+                            <span className="truncate">{tab.label}</span>
                           </TabsTrigger>
                         ))}
                       </TabsList>

@@ -1,4 +1,5 @@
-import { FileText, FilePlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { FileText, FilePlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -109,8 +110,22 @@ export default function Sidebar({
   onProfile,
 }: Props) {
   const activeProjectId = activeView?.type === 'project' ? activeView.projectId : null;
-  const activeSettingsTab = activeView?.type === 'settings' ? activeView.tab : null;
   const activeAdminTab = activeView?.type === 'admin' ? activeView.tab : null;
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Close popover on click outside
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [settingsOpen]);
 
   const initials = profile
     ? `${profile.first_name?.[0] ?? ''}${profile.last_name?.[0] ?? ''}`.toUpperCase()
@@ -118,14 +133,20 @@ export default function Sidebar({
 
   const displayName = profile ? `${profile.first_name} ${profile.last_name}` : '';
 
+  const settingsItems: { icon: React.ElementType; label: string; tab: 'rates' | 'countries' | 'phases' }[] = [
+    { icon: CreditCard, label: 'Rate Card', tab: 'rates' },
+    { icon: Globe, label: 'Manage Countries', tab: 'countries' },
+    { icon: Layers, label: 'Phases', tab: 'phases' },
+  ];
+
   return (
     <div
       className={cn(
-        'h-full bg-white border-r border-gray-200 flex flex-col transition-all duration-200 overflow-hidden',
+        'h-full bg-white border-r border-gray-200 flex flex-col transition-all duration-200 overflow-visible relative',
         collapsed ? 'w-14' : 'w-60'
       )}
     >
-      {/* Header — collapse toggle only, no logo or title */}
+      {/* Header — collapse toggle only */}
       <div className="h-[73px] border-b border-gray-100 flex items-center justify-center px-2 flex-shrink-0">
         <button
           onClick={onToggleCollapse}
@@ -232,25 +253,50 @@ export default function Sidebar({
           )}
         </button>
 
-        {/* Settings link */}
-        {!collapsed && (
+        {/* Settings button + popover */}
+        <div ref={settingsRef} className="relative border-t border-gray-100">
           <button
-            onClick={() => onSelectSettings('rates')}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors border-t border-gray-100"
+            onClick={() => setSettingsOpen((o) => !o)}
+            className={cn(
+              'w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors border-0',
+              settingsOpen
+                ? 'bg-blue-50 text-blue-700 font-semibold'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800',
+              collapsed && 'justify-center px-2'
+            )}
+            title={collapsed ? 'Settings' : undefined}
           >
-            <SlidersHorizontal className="w-4 h-4 text-gray-400" />
-            <span>Settings</span>
+            <SlidersHorizontal className={cn('w-4 h-4', settingsOpen ? 'text-blue-600' : 'text-gray-400')} />
+            {!collapsed && <span className="flex-1 text-left">Settings</span>}
+            {!collapsed && (
+              <ChevronRight className={cn('w-3.5 h-3.5 transition-transform', settingsOpen && 'rotate-90')} />
+            )}
           </button>
-        )}
-        {collapsed && (
-          <button
-            onClick={() => onSelectSettings('rates')}
-            className="w-full flex items-center justify-center py-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-100"
-            title="Settings"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-          </button>
-        )}
+
+          {/* Popover menu — floats above the Settings button */}
+          {settingsOpen && (
+            <div
+              className={cn(
+                'absolute bottom-full mb-1 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 z-50',
+                collapsed ? 'left-full ml-2 w-48' : 'left-2 right-2'
+              )}
+            >
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 py-1.5">
+                Configuration
+              </p>
+              {settingsItems.map(({ icon: Icon, label, tab }) => (
+                <button
+                  key={tab}
+                  onClick={() => { onSelectSettings(tab); setSettingsOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors text-left"
+                >
+                  <Icon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
