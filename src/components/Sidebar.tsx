@@ -1,4 +1,4 @@
-import { Calculator, Folder, FolderPlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
+import { Calculator, FileText, FilePlus, Share2, Trash2, CreditCard, Globe, Layers, ChartBar as BarChart3, Users, Settings2, LayoutTemplate, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -125,19 +125,29 @@ export default function Sidebar({
         collapsed ? 'w-14' : 'w-60'
       )}
     >
-      {/* Header */}
+      {/* Header — matches AI Studio: blue tile icon + "Services Pricing Workbook" */}
       <div className="h-[73px] border-b border-gray-100 flex items-center justify-between px-3 flex-shrink-0">
         {!collapsed && (
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="bg-blue-600 p-1.5 rounded-lg flex-shrink-0">
               <Calculator className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-bold text-gray-900 truncate">SPW</span>
+            <span className="text-sm font-bold text-gray-900 leading-tight truncate">Services Pricing Workbook</span>
+          </div>
+        )}
+        {collapsed && (
+          <div className="flex items-center justify-center w-full">
+            <div className="bg-blue-600 p-1.5 rounded-lg">
+              <Calculator className="w-4 h-4 text-white" />
+            </div>
           </div>
         )}
         <button
           onClick={onToggleCollapse}
-          className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-1.5 transition-colors flex-shrink-0"
+          className={cn(
+            'text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg p-1.5 transition-colors flex-shrink-0',
+            collapsed && 'absolute top-4 right-1'
+          )}
         >
           {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
         </button>
@@ -160,11 +170,11 @@ export default function Sidebar({
         <SectionLabel label="Projects" collapsed={collapsed} />
         {!collapsed && (
           <div
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-900 transition-colors"
             onClick={onNewProject}
           >
-            <FolderPlus className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-500 font-medium">New project</span>
+            <FilePlus className="w-4 h-4 text-gray-400" />
+            <span className="font-medium">New project</span>
           </div>
         )}
         {collapsed && (
@@ -173,14 +183,14 @@ export default function Sidebar({
             className="w-full flex items-center justify-center py-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             title="New Project"
           >
-            <FolderPlus className="w-4 h-4" />
+            <FilePlus className="w-4 h-4" />
           </button>
         )}
 
         {projects.map((p) => (
           <SidebarItem
             key={p.id}
-            icon={Folder}
+            icon={FileText}
             label={p.name}
             active={activeProjectId === p.id}
             collapsed={collapsed}
@@ -211,30 +221,6 @@ export default function Sidebar({
             ))}
           </>
         )}
-
-        {/* Configuration section */}
-        <SectionLabel label="Configuration" collapsed={collapsed} />
-        <SidebarItem
-          icon={CreditCard}
-          label="Rate Card"
-          active={activeSettingsTab === 'rates'}
-          collapsed={collapsed}
-          onClick={() => onSelectSettings('rates')}
-        />
-        <SidebarItem
-          icon={Globe}
-          label="Countries"
-          active={activeSettingsTab === 'countries'}
-          collapsed={collapsed}
-          onClick={() => onSelectSettings('countries')}
-        />
-        <SidebarItem
-          icon={Layers}
-          label="Phases"
-          active={activeSettingsTab === 'phases'}
-          collapsed={collapsed}
-          onClick={() => onSelectSettings('phases')}
-        />
       </div>
 
       {/* Bottom: User profile + Settings */}
@@ -270,7 +256,7 @@ export default function Sidebar({
             onClick={() => onSelectSettings('rates')}
             className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors border-t border-gray-100"
           >
-            <Settings className="w-4 h-4 text-gray-400" />
+            <SlidersHorizontal className="w-4 h-4 text-gray-400" />
             <span>Settings</span>
           </button>
         )}
@@ -280,7 +266,7 @@ export default function Sidebar({
             className="w-full flex items-center justify-center py-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-100"
             title="Settings"
           >
-            <Settings className="w-4 h-4" />
+            <SlidersHorizontal className="w-4 h-4" />
           </button>
         )}
       </div>

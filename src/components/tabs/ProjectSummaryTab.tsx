@@ -330,12 +330,14 @@ function PricingStageTracker({ stages, currentIndex }: { stages: string[]; curre
           const isActive = i === currentIndex;
           const isPast = i < currentIndex;
           const isCancelled = stage === 'Cancelled';
+          const isFirst = i === 0;
+          const isLast = i === stages.length - 1;
 
           return (
             <div
               key={stage}
               className={cn(
-                'relative flex-1 flex items-center justify-center py-4 text-xs font-bold uppercase tracking-widest transition-colors',
+                'relative flex-1 flex items-center justify-center py-5 text-xs font-bold uppercase tracking-widest transition-colors',
                 isActive && !isCancelled
                   ? 'bg-blue-600 text-white'
                   : isActive && isCancelled
@@ -346,11 +348,13 @@ function PricingStageTracker({ stages, currentIndex }: { stages: string[]; curre
                 i > 0 && 'ml-[-1px]'
               )}
               style={{
-                clipPath: i === 0
-                  ? 'none'
-                  : i === stages.length - 1
-                  ? 'polygon(12px 0, 100% 0, 100% 100%, 12px 100%, 0 50%)'
-                  : 'polygon(12px 0, calc(100% - 0px) 0, calc(100% + 0px) 50%, calc(100% - 0px) 100%, 12px 100%, 0 50%)',
+                clipPath: isFirst
+                  ? isLast
+                    ? 'none'
+                    : 'polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%)'
+                  : isLast
+                  ? 'polygon(16px 0, 100% 0, 100% 100%, 16px 100%, 0 50%)'
+                  : 'polygon(16px 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 16px 100%, 0 50%)',
               }}
             >
               {isActive && !isCancelled && (

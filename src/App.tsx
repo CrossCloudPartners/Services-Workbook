@@ -276,9 +276,9 @@ export default function App() {
                   </div>
                 ) : (
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    {/* Tab bar */}
-                    <div className="bg-white border border-gray-200 rounded-xl p-1 shadow-sm mb-5 flex items-center gap-0.5 overflow-x-auto">
-                      <TabsList className="flex gap-0.5 bg-transparent p-0 h-auto">
+                    {/* Tab bar — flat underline style matching AI Studio */}
+                    <div className="bg-white border border-gray-200 rounded-xl mb-5 overflow-x-auto">
+                      <TabsList className="flex bg-transparent p-0 h-auto w-full">
                         {[
                           { value: 'summary', icon: FileText, label: 'Project Summary' },
                           { value: 'resources', icon: Users, label: 'Resource Planning' },
@@ -290,9 +290,9 @@ export default function App() {
                           <TabsTrigger
                             key={tab.value}
                             value={tab.value}
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm text-gray-600 font-medium transition-all data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 data-[state=active]:font-semibold data-[state=active]:shadow-sm hover:bg-gray-50 whitespace-nowrap"
+                            className="flex items-center justify-center gap-1.5 flex-1 px-3 py-3.5 text-sm text-gray-500 font-medium transition-all rounded-none whitespace-nowrap border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-gray-900 data-[state=active]:font-semibold hover:text-gray-700 hover:bg-gray-50 first:rounded-tl-xl last:rounded-tr-xl"
                           >
-                            <tab.icon className="w-3.5 h-3.5" />
+                            <tab.icon className="w-3.5 h-3.5 shrink-0" />
                             {tab.label}
                           </TabsTrigger>
                         ))}
