@@ -1,27 +1,62 @@
-import { ResourcePlanEntry, RateCardEntry } from '../types';
+import { ResourcePlanEntry, RateCardEntry } from '../types/index';
 
-export const calculateTotalHours = (entry: ResourcePlanEntry) => {
-  const dailySum = Object.values(entry.dailyAllocation || {}).reduce((sum, h) => sum + (h || 0), 0);
-  const weeklySum = Object.values(entry.weeklyAllocation || {}).reduce((sum, h) => sum + (h || 0), 0);
-  
-  // Return the sum of allocations. If both are empty or zero, it returns 0.
-  // We prioritize daily if it has any non-zero values, otherwise weekly.
-  return dailySum > 0 ? dailySum : weeklySum;
-};
+export function calcResourceEntry(
+  entry: ResourcePlanEntry,
+  rateCard: RateCardEntry[]
+): ResourcePlanEntry {
+  const rate =
+    rateCard.find((r) => r.role === entry.role && r.country === entry.country) ||
+    rateCard.find((r) => r.role === entry.role) || {
+      cost_rate: 0,
+      bill_rate: 0,
+      currency: 'USD',
+    };
 
-export const recalculateEntry = (entry: ResourcePlanEntry, rateCard: RateCardEntry[]) => {
-  const rate = (entry.currency 
-                 ? rateCard.find(r => r.role === entry.role && r.country === entry.country && r.currency === entry.currency)
-                 : null)
-             || rateCard.find(r => r.role === entry.role && r.country === entry.country)
-             || rateCard.find(r => r.role === entry.role)
-             || { costRate: 0, billRate: 0, currency: 'USD' };
-  
-  const totalHours = calculateTotalHours(entry);
+  const totalHours = entry.weeks * entry.hours_per_week;
 
   return {
     ...entry,
-    totalCost: totalHours * rate.costRate,
-    totalPrice: totalHours * rate.billRate
+    total_cost: totalHours * rate.cost_rate,
+    total_price: totalHours * rate.bill_rate,
   };
-};
+}
+
+export function calcScenario(
+  basePrice: number,
+  baseCost: number,
+  contingencyPercent: number | null,
+  discountPercent: number | null,
+  targetMarginPercent: number | null
+): { price: number; cost: number; margin: number } {
+  const adjustedCost = contingencyPercent
+    ? baseCost * (1 + contingencyPercent / 100)
+    : baseCost;
+
+  let finalPrice: number;
+  if (targetMarginPercent !== null && targetMarginPercent !== undefined) {
+    const tm = targetMarginPercent / 100;
+    finalPrice = tm >= 1 ? adjustedCost : adjustedCost / (1 - tm);
+  } else if (discountPercent !== null && discountPercent !== undefined) {
+    finalPrice = basePrice * (1 - discountPercent / 100);
+  } else {
+    finalPrice = basePrice;
+  }
+
+  const margin =
+    finalPrice > 0 ? ((finalPrice - adjustedCost) / finalPrice) * 100 : 0;
+
+  return { price: finalPrice, cost: adjustedCost, margin };
+}
+
+export function calcMilestoneAmount(
+  milestone: { type: 'percentage' | 'fixed'; value: number },
+  totalPrice: number
+): number {
+  if (milestone.type === 'percentage') {
+    return (milestone.value / 100) * totalPrice;
+  }
+  return milestone.value;
+}
+
+// Legacy compat export
+export const recalculateEntry = calcResourceEntry;
