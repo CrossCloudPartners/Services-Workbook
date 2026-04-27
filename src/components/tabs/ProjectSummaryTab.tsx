@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ExternalLink, Save, Copy, Check, Briefcase, Calendar, FileText } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ExternalLink, CircleCheck as CheckCircle, Briefcase, Calendar, FileText, LayoutGrid, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,17 +16,17 @@ interface Props {
   tenantId: string;
   onSave: (summary: Partial<ProjectSummary>) => Promise<void>;
   onTemplatesUpdated: () => void;
+  onRenameProject?: (name: string) => void;
 }
 
 const PRICING_STAGES = ['Draft', 'In Progress', 'In Review', 'Approved', 'Cancelled'];
 const COMMERCIALS = ['Time & Materials', 'Fixed Price', 'Managed Service', 'Subscription'];
-const PRICING_TYPES = ['Standard', 'Blended', 'Custom'];
 const CURRENCIES = ['USD', 'GBP', 'EUR', 'AUD', 'SGD', 'INR', 'ZAR'];
 
-export default function ProjectSummaryTab({ summary, countries, templates, tenantId, onSave, onTemplatesUpdated }: Props) {
-  const [form, setForm] = useState<Partial<ProjectSummary>>(summary ?? {});
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
+export default function ProjectSummaryTab({ summary, countries, templates, tenantId, onSave, onTemplatesUpdated, onRenameProject }: Props) {
+  const [form, setForm] = useState<Partial<ProjectSummary>>(summary ?? { pricing_stage: 'Draft' });
+  const [templateView, setTemplateView] = useState<'card' | 'list'>('card');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (summary) setForm(summary);
@@ -41,31 +41,22 @@ export default function ProjectSummaryTab({ summary, countries, templates, tenan
           field === 'end_date' ? (value as string) : (f.end_date ?? null)
         );
       }
+
+      // Auto-rename project when account or opportunity changes
+      const account = field === 'account' ? (value as string) : (updated.account ?? '');
+      const opportunity = field === 'opportunity' ? (value as string) : (updated.opportunity ?? '');
+      if (account && opportunity && onRenameProject) {
+        onRenameProject(`${account} - ${opportunity}`);
+      }
+
+      // Debounced auto-save
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        onSave(updated);
+      }, 600);
+
       return updated;
     });
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    await onSave(form);
-    setSaving(false);
-  }
-
-  async function handleCopy() {
-    const text = [
-      `Opportunity: ${form.opportunity ?? ''}`,
-      `Account: ${form.account ?? ''}`,
-      `Country: ${form.country ?? ''}`,
-      `Start Date: ${form.start_date ?? ''}`,
-      `End Date: ${form.end_date ?? ''}`,
-      `Duration: ${form.duration ?? 0} weeks`,
-      `Currency: ${form.currency ?? ''}`,
-      `Pricing Stage: ${form.pricing_stage ?? ''}`,
-      `Pricing Type: ${form.pricing_type ?? ''}`,
-    ].join('\n');
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   async function handleSaveTemplate() {
@@ -91,25 +82,17 @@ export default function ProjectSummaryTab({ summary, countries, templates, tenan
   }
 
   const currentStageIndex = PRICING_STAGES.findIndex(
-    (s) => s.toLowerCase() === (form.pricing_stage ?? '').toLowerCase()
+    (s) => s.toLowerCase() === (form.pricing_stage ?? 'draft').toLowerCase()
   );
 
   return (
     <div className="space-y-5">
-      {/* Action bar */}
-      <div className="flex items-center justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={handleCopy} className="gap-1.5 h-8">
-          {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
-        <Button size="sm" onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 gap-1.5 h-8">
-          <Save className="w-3.5 h-3.5" />
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </div>
-
       {/* Pricing Stage Progress Bar */}
-      <PricingStageTracker stages={PRICING_STAGES} currentIndex={currentStageIndex} />
+      <PricingStageTracker
+        stages={PRICING_STAGES}
+        currentIndex={currentStageIndex === -1 ? 0 : currentStageIndex}
+        onStageChange={(stage) => update('pricing_stage', stage)}
+      />
 
       {/* Two-column main cards */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
@@ -271,35 +254,35 @@ export default function ProjectSummaryTab({ summary, countries, templates, tenan
         </div>
       </div>
 
-      {/* Team card */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-6">
-        <h3 className="text-base font-bold text-gray-900 mb-5">Team</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Field label="Regional Lead">
-            <Input value={form.regional_lead ?? ''} onChange={(e) => update('regional_lead', e.target.value)} className="border-gray-200 h-10" />
-          </Field>
-          <Field label="Regional Services Lead">
-            <Input value={form.regional_services_lead ?? ''} onChange={(e) => update('regional_services_lead', e.target.value)} className="border-gray-200 h-10" />
-          </Field>
-          <Field label="Success Partner">
-            <Input value={form.success_partner ?? ''} onChange={(e) => update('success_partner', e.target.value)} className="border-gray-200 h-10" />
-          </Field>
-          <Field label="Engagement Manager">
-            <Input value={form.engagement_manager ?? ''} onChange={(e) => update('engagement_manager', e.target.value)} className="border-gray-200 h-10" />
-          </Field>
-          <Field label="Project Manager">
-            <Input value={form.project_manager ?? ''} onChange={(e) => update('project_manager', e.target.value)} className="border-gray-200 h-10" />
-          </Field>
-        </div>
-      </div>
-
       {/* Project Templates */}
       <div className="bg-white border border-gray-200 rounded-2xl p-6">
         <div className="flex items-center gap-2.5 mb-1">
           <FileText className="w-5 h-5 text-blue-600" />
           <h3 className="text-base font-bold text-gray-900">Project Templates</h3>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => setTemplateView('card')}
+              className={cn(
+                'p-1.5 rounded-md transition-colors',
+                templateView === 'card' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'
+              )}
+              title="Card view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setTemplateView('list')}
+              className={cn(
+                'p-1.5 rounded-md transition-colors',
+                templateView === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:text-gray-600'
+              )}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-500 mb-1">
           Save current resource plan as a template or{' '}
           {templates.length > 0 ? (
             <Select onValueChange={handleApplyTemplate}>
@@ -317,12 +300,62 @@ export default function ProjectSummaryTab({ summary, countries, templates, tenan
           )}
           .
         </p>
+
+        {templates.length > 0 && (
+          templateView === 'card' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+              {templates.map((t) => (
+                <div
+                  key={t.id}
+                  onClick={() => handleApplyTemplate(t.id)}
+                  className="border border-gray-200 rounded-lg p-3 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                >
+                  <p className="text-sm font-medium text-gray-800 truncate">{t.name}</p>
+                  {t.description && (
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{t.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 mt-3">
+              {templates.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between py-2.5 px-1 rounded hover:bg-gray-50 transition-colors cursor-pointer"
+                  onClick={() => handleApplyTemplate(t.id)}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{t.name}</p>
+                    {t.description && (
+                      <p className="text-xs text-gray-400 truncate">{t.description}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleApplyTemplate(t.id); }}
+                    className="ml-4 text-xs text-blue-600 font-medium hover:underline flex-shrink-0"
+                  >
+                    Apply
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+        )}
       </div>
     </div>
   );
 }
 
-function PricingStageTracker({ stages, currentIndex }: { stages: string[]; currentIndex: number }) {
+function PricingStageTracker({
+  stages,
+  currentIndex,
+  onStageChange,
+}: {
+  stages: string[];
+  currentIndex: number;
+  onStageChange?: (stage: string) => void;
+}) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <div className="flex">
@@ -336,29 +369,30 @@ function PricingStageTracker({ stages, currentIndex }: { stages: string[]; curre
           return (
             <div
               key={stage}
+              onClick={() => onStageChange?.(stage)}
               className={cn(
-                'relative flex-1 flex items-center justify-center py-5 text-xs font-bold uppercase tracking-widest transition-colors',
+                'relative flex-1 flex items-center justify-center py-5 text-xs font-bold uppercase tracking-widest transition-colors cursor-pointer select-none',
                 isActive && !isCancelled
                   ? 'bg-blue-600 text-white'
                   : isActive && isCancelled
-                  ? 'bg-gray-400 text-white'
+                  ? 'bg-gray-300 text-gray-500'
                   : isPast
-                  ? 'bg-blue-50 text-blue-500'
-                  : 'bg-white text-gray-400',
-                i > 0 && 'ml-[-1px]'
+                  ? 'bg-blue-50 text-blue-500 hover:bg-blue-100'
+                  : 'bg-gray-50 text-gray-400 hover:bg-gray-100',
+                i > 0 && 'ml-[-2px]'
               )}
               style={{
                 clipPath: isFirst
                   ? isLast
                     ? 'none'
-                    : 'polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%)'
+                    : 'polygon(0 0, calc(100% - 20px) 0, 100% 50%, calc(100% - 20px) 100%, 0 100%)'
                   : isLast
-                  ? 'polygon(16px 0, 100% 0, 100% 100%, 16px 100%, 0 50%)'
-                  : 'polygon(16px 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 16px 100%, 0 50%)',
+                  ? 'polygon(20px 0, 100% 0, 100% 100%, 20px 100%, 0 50%)'
+                  : 'polygon(20px 0, calc(100% - 20px) 0, 100% 50%, calc(100% - 20px) 100%, 20px 100%, 0 50%)',
               }}
             >
               {isActive && !isCancelled && (
-                <Check className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
+                <CheckCircle className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
               )}
               <span>{stage}</span>
             </div>

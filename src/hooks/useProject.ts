@@ -84,6 +84,7 @@ export function useProjects(userId: string | null, tenantId: string | null) {
         currency: 'USD',
         exchange_rate: 1,
         risk_score: 0,
+        pricing_stage: 'Draft',
       }),
       supabase.from('financial_summaries').insert({
         project_id: project.id,
@@ -309,6 +310,11 @@ export function useProjectData(projectId: string | null) {
     );
   }
 
+  async function renameProject(pid: string, name: string) {
+    await supabase.from('projects').update({ name, updated_at: new Date().toISOString() }).eq('id', pid);
+    setData((prev) => prev ? { ...prev, project: { ...prev.project, name } } : prev);
+  }
+
   function refresh() {
     if (projectId) loadProjectData(projectId);
   }
@@ -326,6 +332,7 @@ export function useProjectData(projectId: string | null) {
     saveChangeHistory,
     saveProjectPOs,
     saveResourcePlan,
+    renameProject,
     refresh,
   };
 }

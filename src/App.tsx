@@ -276,8 +276,8 @@ export default function App() {
                   </div>
                 ) : (
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    {/* Tab bar — flat underline style matching AI Studio */}
-                    <div className="bg-white border border-gray-200 rounded-xl mb-5 overflow-x-auto">
+                    {/* Tab bar — flat underline style, sticky on scroll */}
+                    <div className="bg-white border border-gray-200 rounded-xl mb-5 overflow-x-auto sticky top-0 z-20">
                       <TabsList className="flex bg-transparent p-0 h-auto w-full">
                         {[
                           { value: 'summary', icon: FileText, label: 'Project Summary' },
@@ -307,6 +307,12 @@ export default function App() {
                         tenantId={tenantId!}
                         onSave={projectHook.saveProjectSummary}
                         onTemplatesUpdated={refreshSettings}
+                        onRenameProject={(name) => {
+                          if (activeProjectId) {
+                            projectHook.renameProject(activeProjectId, name);
+                            refreshProjects();
+                          }
+                        }}
                       />
                     </TabsContent>
 
